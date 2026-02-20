@@ -1,7 +1,11 @@
 'use client';
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { FaTimes } from 'react-icons/fa';
+import { FaTimes, FaSearchPlus, FaSearchMinus, FaExpand, FaProjectDiagram, FaSitemap, FaDotCircle } from 'react-icons/fa';
+
+/* ------------------------------------------------------------------ */
+/*  Types                                                              */
+/* ------------------------------------------------------------------ */
 
 interface DependencyGraphProps {
   pages: Record<string, { title: string; importance?: string; relatedPages?: string[] }>;
@@ -15,10 +19,13 @@ interface GraphNode {
   id: string;
   title: string;
   importance: string;
+  category: NodeCategory;
   x: number;
   y: number;
   vx: number;
   vy: number;
+  /** number of edges connected */
+  degree: number;
 }
 
 interface GraphEdge {
@@ -26,13 +33,129 @@ interface GraphEdge {
   target: string;
 }
 
-// Truncate text to maxLen characters
+type LayoutMode = 'force' | 'hierarchical' | 'radial';
+
+type NodeCategory = 'component' | 'page' | 'api' | 'utility' | 'config' | 'model' | 'hook' | 'test' | 'general';
+
+/* ------------------------------------------------------------------ */
+/*  Category inference from page title / id                           */
+/* ------------------------------------------------------------------ */
+
+const CATEGORY_PATTERNS: [RegExp, NodeCategory][] = [
+  [/\bcomponent/i, 'component'],
+  [/\bui\b/i, 'component'],
+  [/\bwidget/i, 'component'],
+  [/\bview\b/i, 'component'],
+  [/\bpage\b/i, 'page'],
+  [/\broute/i, 'page'],
+  [/\blayout/i, 'page'],
+  [/\bnavigat/i, 'page'],
+  [/\bapi\b/i, 'api'],
+  [/\bendpoint/i, 'api'],
+  [/\brest\b/i, 'api'],
+  [/\bgraphql/i, 'api'],
+  [/\bserver/i, 'api'],
+  [/\bcontroller/i, 'api'],
+  [/\butil/i, 'utility'],
+  [/\bhelper/i, 'utility'],
+  [/\blib\b/i, 'utility'],
+  [/\btool/i, 'utility'],
+  [/\bformat/i, 'utility'],
+  [/\bparse/i, 'utility'],
+  [/\bconfig/i, 'config'],
+  [/\bsetting/i, 'config'],
+  [/\benv/i, 'config'],
+  [/\bsetup/i, 'config'],
+  [/\binit/i, 'config'],
+  [/\bmodel/i, 'model'],
+  [/\bschema/i, 'model'],
+  [/\btype/i, 'model'],
+  [/\binterface/i, 'model'],
+  [/\bdatabase/i, 'model'],
+  [/\bdata\b/i, 'model'],
+  [/\bstore/i, 'model'],
+  [/\bstate/i, 'model'],
+  [/\bhook/i, 'hook'],
+  [/\buse[A-Z]/i, 'hook'],
+  [/\btest/i, 'test'],
+  [/\bspec\b/i, 'test'],
+];
+
+function inferCategory(title: string, id: string): NodeCategory {
+  const text = `${title} ${id}`;
+  for (const [re, cat] of CATEGORY_PATTERNS) {
+    if (re.test(text)) return cat;
+  }
+  return 'general';
+}
+
+/* ------------------------------------------------------------------ */
+/*  Category colours & labels — work well in both light & dark mode   */
+/* ------------------------------------------------------------------ */
+
+interface CategoryTheme {
+  label: string;
+  light: { bg: string; border: string; text: string };
+  dark: { bg: string; border: string; text: string };
+}
+
+const CATEGORY_THEMES: Record<NodeCategory, CategoryTheme> = {
+  component: {
+    label: 'Component',
+    light: { bg: '#dbeafe', border: '#3b82f6', text: '#1e40af' },
+    dark:  { bg: '#1e3a5f', border: '#60a5fa', text: '#bfdbfe' },
+  },
+  page: {
+    label: 'Page / Route',
+    light: { bg: '#fce7f3', border: '#ec4899', text: '#9d174d' },
+    dark:  { bg: '#4a1942', border: '#f472b6', text: '#fbcfe8' },
+  },
+  api: {
+    label: 'API / Server',
+    light: { bg: '#d1fae5', border: '#10b981', text: '#065f46' },
+    dark:  { bg: '#064e3b', border: '#34d399', text: '#a7f3d0' },
+  },
+  utility: {
+    label: 'Utility',
+    light: { bg: '#fef3c7', border: '#f59e0b', text: '#92400e' },
+    dark:  { bg: '#451a03', border: '#fbbf24', text: '#fde68a' },
+  },
+  config: {
+    label: 'Config',
+    light: { bg: '#e0e7ff', border: '#6366f1', text: '#3730a3' },
+    dark:  { bg: '#282556', border: '#818cf8', text: '#c7d2fe' },
+  },
+  model: {
+    label: 'Data / Model',
+    light: { bg: '#ede9fe', border: '#8b5cf6', text: '#5b21b6' },
+    dark:  { bg: '#2e1065', border: '#a78bfa', text: '#ddd6fe' },
+  },
+  hook: {
+    label: 'Hook / State',
+    light: { bg: '#ccfbf1', border: '#14b8a6', text: '#115e59' },
+    dark:  { bg: '#134e4a', border: '#2dd4bf', text: '#99f6e4' },
+  },
+  test: {
+    label: 'Test',
+    light: { bg: '#fee2e2', border: '#ef4444', text: '#991b1b' },
+    dark:  { bg: '#450a0a', border: '#f87171', text: '#fecaca' },
+  },
+  general: {
+    label: 'General',
+    light: { bg: '#f3f4f6', border: '#9ca3af', text: '#374151' },
+    dark:  { bg: '#27272a', border: '#71717a', text: '#d4d4d8' },
+  },
+};
+
+/* ------------------------------------------------------------------ */
+/*  Helpers                                                           */
+/* ------------------------------------------------------------------ */
+
 function truncate(text: string, maxLen: number): string {
   if (text.length <= maxLen) return text;
   return text.slice(0, maxLen - 1) + '\u2026';
 }
 
-// Deterministic pseudo-random based on string hash (for consistent initial layout)
 function hashCode(str: string): number {
   let hash = 0;
   for (let i = 0; i < str.length; i++) {
@@ -48,43 +171,66 @@ function seededRandom(seed: number): number {
   return x - Math.floor(x);
 }
 
-function getNodeRadius(nodeId: string, currentPageId: string | null, importance: string): number {
-  if (nodeId === currentPageId) return 24;
-  if (importance === 'high') return 18;
-  return 14;
+/* ------------------------------------------------------------------ */
+/*  Node dimensions                                                   */
+/* ------------------------------------------------------------------ */
+
+const NODE_RECT_W = 180;
+const NODE_RECT_H = 44;
+const NODE_RADIUS = 8; // border radius
+
+function getNodeWidth(node: GraphNode, currentPageId: string | null): number {
+  if (node.id === currentPageId) return NODE_RECT_W + 20;
+  if (node.importance === 'high') return NODE_RECT_W + 10;
+  return NODE_RECT_W;
 }
 
-// Run force-directed layout simulation
-function computeLayout(
+function getNodeHeight(node: GraphNode, currentPageId: string | null): number {
+  if (node.id === currentPageId) return NODE_RECT_H + 6;
+  if (node.importance === 'high') return NODE_RECT_H + 2;
+  return NODE_RECT_H;
+}
+
+/* ------------------------------------------------------------------ */
+/*  Layout algorithms                                                 */
+/* ------------------------------------------------------------------ */
+
+function computeForceLayout(
   nodes: GraphNode[],
   edges: GraphEdge[],
   width: number,
   height: number,
-  iterations: number = 100
+  iterations = 120,
 ): GraphNode[] {
   if (nodes.length === 0) return nodes;
 
   const result = nodes.map(n => ({ ...n }));
-
   const cx = width / 2;
   const cy = height / 2;
-  const repulsionStrength = 8000;
-  const attractionStrength = 0.005;
-  const centerGravity = 0.01;
-  const idealEdgeLength = 120;
-  const damping = 0.9;
+  const repulsionStrength = 25000;
+  const attractionStrength = 0.004;
+  const centerGravity = 0.008;
+  const idealEdgeLength = 220;
+  const damping = 0.92;
+
+  // Build adjacency for quick lookup
+  const adj = new Map<string, Set<string>>();
+  for (const n of result) adj.set(n.id, new Set());
+  for (const e of edges) {
+    adj.get(e.source)?.add(e.target);
+    adj.get(e.target)?.add(e.source);
+  }
 
   for (let iter = 0; iter < iterations; iter++) {
-    // Decrease damping over time for convergence
     const currentDamping = damping * (1 - iter / iterations * 0.5);
 
     // Repulsion between all pairs
     for (let i = 0; i < result.length; i++) {
       for (let j = i + 1; j < result.length; j++) {
-        const dx = result[j].x - result[i].x;
-        const dy = result[j].y - result[i].y;
+        let dx = result[j].x - result[i].x;
+        let dy = result[j].y - result[i].y;
         let dist = Math.sqrt(dx * dx + dy * dy);
-        if (dist < 1) dist = 1;
+        if (dist < 1) { dx = 1; dy = 1; dist = Math.SQRT2; }
 
         const force = repulsionStrength / (dist * dist);
         const fx = (dx / dist) * force;
@@ -130,27 +276,175 @@ function computeLayout(
       node.vx *= currentDamping;
       node.vy *= currentDamping;
 
-      // Limit max velocity
       const speed = Math.sqrt(node.vx * node.vx + node.vy * node.vy);
-      if (speed > 10) {
-        node.vx = (node.vx / speed) * 10;
-        node.vy = (node.vy / speed) * 10;
+      if (speed > 12) {
+        node.vx = (node.vx / speed) * 12;
+        node.vy = (node.vy / speed) * 12;
       }
 
       node.x += node.vx;
       node.y += node.vy;
 
-      // Keep within bounds with padding
-      const padding = 60;
-      node.x = Math.max(padding, Math.min(width - padding, node.x));
-      node.y = Math.max(padding, Math.min(height - padding, node.y));
+      const px = 120;
+      const py = 60;
+      node.x = Math.max(px, Math.min(width - px, node.x));
+      node.y = Math.max(py, Math.min(height - py, node.y));
     }
   }
 
   return result;
 }
 
-// Arrange nodes in a grid when there are no edges
+function computeHierarchicalLayout(
+  nodes: GraphNode[],
+  edges: GraphEdge[],
+  width: number,
+  height: number,
+): GraphNode[] {
+  if (nodes.length === 0) return nodes;
+  const result = nodes.map(n => ({ ...n, vx: 0, vy: 0 }));
+
+  // BFS from highest-degree nodes to assign levels
+  const adj = new Map<string, Set<string>>();
+  for (const n of result) adj.set(n.id, new Set());
+  for (const e of edges) {
+    adj.get(e.source)?.add(e.target);
+    adj.get(e.target)?.add(e.source);
+  }
+
+  // Sort by degree descending, start from highest
+  const sorted = [...result].sort((a, b) => b.degree - a.degree);
+  const level = new Map<string, number>();
+  const visited = new Set<string>();
+  const queue: string[] = [];
+
+  // Start BFS from top-degree node
+  if (sorted.length > 0) {
+    const root = sorted[0].id;
+    level.set(root, 0);
+    visited.add(root);
+    queue.push(root);
+  }
+
+  while (queue.length > 0) {
+    const curr = queue.shift()!;
+    const currLevel = level.get(curr)!;
+    for (const neighbor of adj.get(curr) || []) {
+      if (!visited.has(neighbor)) {
+        visited.add(neighbor);
+        level.set(neighbor, currLevel + 1);
+        queue.push(neighbor);
+      }
+    }
+  }
+
+  // Assign level 0 to unvisited nodes (disconnected)
+  for (const n of result) {
+    if (!level.has(n.id)) level.set(n.id, 0);
+  }
+
+  // Group by level
+  const levels = new Map<number, GraphNode[]>();
+  for (const n of result) {
+    const l = level.get(n.id) || 0;
+    if (!levels.has(l)) levels.set(l, []);
+    levels.get(l)!.push(n);
+  }
+
+  const numLevels = Math.max(...levels.keys()) + 1;
+  const levelHeight = Math.max(100, (height - 120) / Math.max(numLevels, 1));
+
+  for (const [l, nodesInLevel] of levels) {
+    const levelWidth = width / (nodesInLevel.length + 1);
+    for (let i = 0; i < nodesInLevel.length; i++) {
+      nodesInLevel[i].x = levelWidth * (i + 1);
+      nodesInLevel[i].y = 60 + l * levelHeight;
+    }
+  }
+
+  return result;
+}
+
+function computeRadialLayout(
+  nodes: GraphNode[],
+  edges: GraphEdge[],
+  width: number,
+  height: number,
+): GraphNode[] {
+  if (nodes.length === 0) return nodes;
+  const result = nodes.map(n => ({ ...n, vx: 0, vy: 0 }));
+
+  const cx = width / 2;
+  const cy = height / 2;
+  const maxRadius = Math.min(width, height) / 2 - 120;
+
+  // BFS from highest-degree node
+  const adj = new Map<string, Set<string>>();
+  for (const n of result) adj.set(n.id, new Set());
+  for (const e of edges) {
+    adj.get(e.source)?.add(e.target);
+    adj.get(e.target)?.add(e.source);
+  }
+
+  const sorted = [...result].sort((a, b) => b.degree - a.degree);
+  const ring = new Map<string, number>();
+  const visited = new Set<string>();
+  const queue: string[] = [];
+
+  if (sorted.length > 0) {
+    const root = sorted[0].id;
+    ring.set(root, 0);
+    visited.add(root);
+    queue.push(root);
+  }
+
+  while (queue.length > 0) {
+    const curr = queue.shift()!;
+    const currRing = ring.get(curr)!;
+    for (const neighbor of adj.get(curr) || []) {
+      if (!visited.has(neighbor)) {
+        visited.add(neighbor);
+        ring.set(neighbor, currRing + 1);
+        queue.push(neighbor);
+      }
+    }
+  }
+
+  for (const n of result) {
+    if (!ring.has(n.id)) ring.set(n.id, 0);
+  }
+
+  // Group by ring
+  const rings = new Map<number, GraphNode[]>();
+  for (const n of result) {
+    const r = ring.get(n.id) || 0;
+    if (!rings.has(r)) rings.set(r, []);
+    rings.get(r)!.push(n);
+  }
+
+  const numRings = Math.max(...rings.keys()) + 1;
+
+  for (const [r, nodesInRing] of rings) {
+    if (r === 0) {
+      // Center node
+      for (const n of nodesInRing) {
+        n.x = cx;
+        n.y = cy;
+      }
+    } else {
+      const radius = (r / Math.max(numRings - 1, 1)) * maxRadius;
+      const angleStep = (2 * Math.PI) / nodesInRing.length;
+      for (let i = 0; i < nodesInRing.length; i++) {
+        const angle = angleStep * i - Math.PI / 2;
+        nodesInRing[i].x = cx + radius * Math.cos(angle);
+        nodesInRing[i].y = cy + radius * Math.sin(angle);
+      }
+    }
+  }
+
+  return result;
+}
+
 function computeGridLayout(nodes: GraphNode[], width: number, height: number): GraphNode[] {
   if (nodes.length === 0) return nodes;
   const result = nodes.map(n => ({ ...n }));
@@ -170,6 +464,48 @@ function computeGridLayout(nodes: GraphNode[], width: number, height: number): G
   return result;
 }
 
+/* ------------------------------------------------------------------ */
+/*  Curved edge path helper                                           */
+/* ------------------------------------------------------------------ */
+
+function edgePath(sx: number, sy: number, tx: number, ty: number): string {
+  const dx = tx - sx;
+  const dy = ty - sy;
+  // Slight curve via a control point offset perpendicular to the line
+  const mx = (sx + tx) / 2;
+  const my = (sy + ty) / 2;
+  const len = Math.sqrt(dx * dx + dy * dy);
+  if (len < 1) return `M ${sx} ${sy} L ${tx} ${ty}`;
+  const curvature = Math.min(30, len * 0.08);
+  // perpendicular offset
+  const nx = -dy / len * curvature;
+  const ny = dx / len * curvature;
+  return `M ${sx} ${sy} Q ${mx + nx} ${my + ny} ${tx} ${ty}`;
+}
+
+/* ------------------------------------------------------------------ */
+/*  Dark mode detection hook                                          */
+/* ------------------------------------------------------------------ */
+
+function useIsDark(): boolean {
+  const [dark, setDark] = useState(false);
+  useEffect(() => {
+    const check = () => {
+      setDark(document.documentElement.getAttribute('data-theme') === 'dark' ||
+              document.documentElement.classList.contains('dark'));
+    };
+    check();
+    const observer = new MutationObserver(check);
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class', 'data-theme'] });
+    return () => observer.disconnect();
+  }, []);
+  return dark;
+}
+
+/* ------------------------------------------------------------------ */
+/*  Main Component                                                    */
+/* ------------------------------------------------------------------ */
+
 export default function DependencyGraph({
   pages,
   currentPageId,
@@ -180,21 +516,40 @@ export default function DependencyGraph({
   const svgRef = useRef<SVGSVGElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [hoveredNode, setHoveredNode] = useState<string | null>(null);
-  const [tooltip, setTooltip] = useState<{ x: number; y: number; title: string } | null>(null);
+  const [selectedNode, setSelectedNode] = useState<string | null>(null);
+  const [tooltip, setTooltip] = useState<{ x: number; y: number; title: string; category: NodeCategory } | null>(null);
+  const [layoutMode, setLayoutMode] = useState<LayoutMode>('force');
+  const isDark = useIsDark();
+
+  // Viewport dimensions for layout
+  const LAYOUT_W = 1400;
+  const LAYOUT_H = 900;
 
   // Pan & zoom state
-  const [viewBox, setViewBox] = useState({ x: 0, y: 0, w: 900, h: 600 });
+  const [viewBox, setViewBox] = useState({ x: 0, y: 0, w: LAYOUT_W, h: LAYOUT_H });
   const isPanning = useRef(false);
   const panStart = useRef({ x: 0, y: 0 });
-  const viewBoxOnPanStart = useRef({ x: 0, y: 0, w: 900, h: 600 });
+  const viewBoxOnPanStart = useRef({ x: 0, y: 0, w: LAYOUT_W, h: LAYOUT_H });
 
-  // Compute nodes and edges from pages
+  /* ---- Build graph data ---- */
   const { nodes, edges, hasEdges } = useMemo(() => {
     const entries = Object.entries(pages);
-    // Limit to 200 nodes
     const limitedEntries = entries.slice(0, 200);
-
     const validIds = new Set(limitedEntries.map(([id]) => id));
+
+    // Count degree
+    const degreeMap = new Map<string, number>();
+    for (const [id] of limitedEntries) degreeMap.set(id, 0);
+    for (const [id, page] of limitedEntries) {
+      if (page.relatedPages) {
+        for (const related of page.relatedPages) {
+          if (validIds.has(related)) {
+            degreeMap.set(id, (degreeMap.get(id) || 0) + 1);
+            degreeMap.set(related, (degreeMap.get(related) || 0) + 1);
+          }
+        }
+      }
+    }
 
     const rawNodes: GraphNode[] = limitedEntries.map(([id, page]) => {
       const seed = hashCode(id);
@@ -202,10 +557,12 @@ export default function DependencyGraph({
         id,
         title: page.title,
         importance: page.importance || 'medium',
-        x: 100 + seededRandom(seed) * 700,
-        y: 100 + seededRandom(seed + 1) * 400,
+        category: inferCategory(page.title, id),
+        x: 100 + seededRandom(seed) * (LAYOUT_W - 200),
+        y: 80 + seededRandom(seed + 1) * (LAYOUT_H - 160),
         vx: 0,
         vy: 0,
+        degree: degreeMap.get(id) || 0,
       };
     });
 
@@ -229,31 +586,30 @@ export default function DependencyGraph({
     return { nodes: rawNodes, edges: rawEdges, hasEdges: rawEdges.length > 0 };
   }, [pages]);
 
-  // Run layout
+  /* ---- Layout ---- */
   const layoutNodes = useMemo(() => {
-    const width = 900;
-    const height = 600;
-    if (!hasEdges) {
-      return computeGridLayout(nodes, width, height);
+    if (!hasEdges) return computeGridLayout(nodes, LAYOUT_W, LAYOUT_H);
+    switch (layoutMode) {
+      case 'hierarchical':
+        return computeHierarchicalLayout(nodes, edges, LAYOUT_W, LAYOUT_H);
+      case 'radial':
+        return computeRadialLayout(nodes, edges, LAYOUT_W, LAYOUT_H);
+      case 'force':
+      default:
+        return computeForceLayout(nodes, edges, LAYOUT_W, LAYOUT_H, 120);
     }
-    return computeLayout(nodes, edges, width, height, 100);
-  }, [nodes, edges, hasEdges]);
+  }, [nodes, edges, hasEdges, layoutMode]);
 
-  // Build a quick lookup map for positions
+  /* ---- Lookup maps ---- */
   const nodePositions = useMemo(() => {
     const map = new Map<string, GraphNode>();
-    for (const node of layoutNodes) {
-      map.set(node.id, node);
-    }
+    for (const node of layoutNodes) map.set(node.id, node);
     return map;
   }, [layoutNodes]);
 
-  // Determine connected nodes for hover highlight
   const connectedTo = useMemo(() => {
     const map = new Map<string, Set<string>>();
-    for (const node of layoutNodes) {
-      map.set(node.id, new Set());
-    }
+    for (const node of layoutNodes) map.set(node.id, new Set());
     for (const edge of edges) {
       map.get(edge.source)?.add(edge.target);
       map.get(edge.target)?.add(edge.source);
@@ -261,35 +617,38 @@ export default function DependencyGraph({
     return map;
   }, [layoutNodes, edges]);
 
-  // Reset viewBox when modal opens
+  /* ---- Determine which categories are actually present ---- */
+  const presentCategories = useMemo(() => {
+    const cats = new Set<NodeCategory>();
+    for (const node of layoutNodes) cats.add(node.category);
+    return cats;
+  }, [layoutNodes]);
+
+  /* ---- Reset on open ---- */
   useEffect(() => {
     if (isOpen) {
-      setViewBox({ x: 0, y: 0, w: 900, h: 600 });
+      setViewBox({ x: 0, y: 0, w: LAYOUT_W, h: LAYOUT_H });
       setHoveredNode(null);
+      setSelectedNode(null);
       setTooltip(null);
     }
   }, [isOpen]);
 
-  // Close on Escape
+  /* ---- Close on Escape ---- */
   useEffect(() => {
     if (!isOpen) return;
     const handleKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        onClose();
-      }
+      if (e.key === 'Escape') onClose();
     };
     window.addEventListener('keydown', handleKey);
     return () => window.removeEventListener('keydown', handleKey);
   }, [isOpen, onClose]);
 
-  // Pan handlers
+  /* ---- Pan handlers ---- */
   const handleMouseDown = useCallback((e: React.MouseEvent<SVGSVGElement>) => {
-    // Only pan on middle click or left click on the SVG background
     if (e.button !== 0) return;
     const target = e.target as SVGElement;
-    // Only start panning if clicking on the SVG background (not on a node)
-    if (target.tagName !== 'svg' && target.tagName !== 'rect' && !target.classList.contains('graph-bg')) return;
-
+    if (target.closest('.graph-node')) return; // don't pan when clicking node
     isPanning.current = true;
     panStart.current = { x: e.clientX, y: e.clientY };
     viewBoxOnPanStart.current = { ...viewBox };
@@ -300,14 +659,11 @@ export default function DependencyGraph({
     if (!isPanning.current) return;
     const dx = e.clientX - panStart.current.x;
     const dy = e.clientY - panStart.current.y;
-
-    // Scale movement based on viewBox vs actual SVG size
     const svg = svgRef.current;
     if (!svg) return;
     const rect = svg.getBoundingClientRect();
     const scaleX = viewBoxOnPanStart.current.w / rect.width;
     const scaleY = viewBoxOnPanStart.current.h / rect.height;
-
     setViewBox({
       ...viewBoxOnPanStart.current,
       x: viewBoxOnPanStart.current.x - dx * scaleX,
@@ -319,32 +675,61 @@ export default function DependencyGraph({
     isPanning.current = false;
   }, []);
 
-  // Zoom handler
+  /* ---- Zoom ---- */
   const handleWheel = useCallback((e: React.WheelEvent<SVGSVGElement>) => {
     e.preventDefault();
     const zoomFactor = e.deltaY > 0 ? 1.1 : 0.9;
-
     setViewBox(prev => {
       const newW = prev.w * zoomFactor;
       const newH = prev.h * zoomFactor;
-      // Zoom toward center of current view
       const newX = prev.x + (prev.w - newW) / 2;
       const newY = prev.y + (prev.h - newH) / 2;
-
-      // Clamp zoom
-      if (newW < 200 || newW > 5000) return prev;
-
+      if (newW < 300 || newW > 6000) return prev;
       return { x: newX, y: newY, w: newW, h: newH };
     });
   }, []);
 
-  // Handle node hover with tooltip
+  const zoomIn = useCallback(() => {
+    setViewBox(prev => {
+      const factor = 0.8;
+      const newW = prev.w * factor;
+      const newH = prev.h * factor;
+      if (newW < 300) return prev;
+      return { x: prev.x + (prev.w - newW) / 2, y: prev.y + (prev.h - newH) / 2, w: newW, h: newH };
+    });
+  }, []);
+
+  const zoomOut = useCallback(() => {
+    setViewBox(prev => {
+      const factor = 1.25;
+      const newW = prev.w * factor;
+      const newH = prev.h * factor;
+      if (newW > 6000) return prev;
+      return { x: prev.x + (prev.w - newW) / 2, y: prev.y + (prev.h - newH) / 2, w: newW, h: newH };
+    });
+  }, []);
+
+  const fitToView = useCallback(() => {
+    setViewBox({ x: -50, y: -30, w: LAYOUT_W + 100, h: LAYOUT_H + 60 });
+  }, []);
+
+  /* ---- Focus on a node (center viewport on it) ---- */
+  const focusNode = useCallback((nodeId: string) => {
+    const node = nodePositions.get(nodeId);
+    if (!node) return;
+    setViewBox(prev => ({
+      x: node.x - prev.w / 2,
+      y: node.y - prev.h / 2,
+      w: Math.min(prev.w, LAYOUT_W * 0.6),
+      h: Math.min(prev.h, LAYOUT_H * 0.6),
+    }));
+  }, [nodePositions]);
+
+  /* ---- Hover ---- */
   const handleNodeMouseEnter = useCallback((nodeId: string, e: React.MouseEvent) => {
     setHoveredNode(nodeId);
     const node = nodePositions.get(nodeId);
-    if (node) {
-      setTooltip({ x: e.clientX, y: e.clientY, title: node.title });
-    }
+    if (node) setTooltip({ x: e.clientX, y: e.clientY, title: node.title, category: node.category });
   }, [nodePositions]);
 
   const handleNodeMouseMove = useCallback((e: React.MouseEvent) => {
@@ -356,110 +741,225 @@ export default function DependencyGraph({
     setTooltip(null);
   }, []);
 
-  const handleNodeClick = useCallback((nodeId: string) => {
-    onSelectPage(nodeId);
-    onClose();
-  }, [onSelectPage, onClose]);
-
-  // Determine node fill color
-  const getNodeFill = useCallback((nodeId: string, importance: string): string => {
-    if (nodeId === currentPageId) return 'var(--primary)';
-    if (importance === 'high') return 'color-mix(in srgb, var(--primary) 60%, transparent)';
-    if (importance === 'medium') return 'var(--muted)';
-    return 'color-mix(in srgb, var(--muted) 60%, transparent)';
-  }, [currentPageId]);
-
-  // Determine node stroke
-  const getNodeStroke = useCallback((nodeId: string): string => {
-    if (nodeId === currentPageId) return 'var(--primary)';
-    if (nodeId === hoveredNode) return 'var(--primary)';
-    return 'var(--border)';
-  }, [currentPageId, hoveredNode]);
-
-  // Determine edge style
-  const getEdgeStyle = useCallback((edge: GraphEdge): { stroke: string; strokeWidth: number; opacity: number } => {
-    const isCurrent = edge.source === currentPageId || edge.target === currentPageId;
-    const isHovered = hoveredNode && (edge.source === hoveredNode || edge.target === hoveredNode);
-
-    if (isHovered) {
-      return { stroke: 'var(--primary)', strokeWidth: 2, opacity: 0.8 };
+  /* ---- Click node ---- */
+  const handleNodeClick = useCallback((nodeId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (selectedNode === nodeId) {
+      // Double-click behavior: navigate to the page
+      onSelectPage(nodeId);
+      onClose();
+    } else {
+      setSelectedNode(nodeId);
+      focusNode(nodeId);
     }
-    if (isCurrent) {
-      return { stroke: 'color-mix(in srgb, var(--primary) 50%, transparent)', strokeWidth: 1.5, opacity: 0.7 };
-    }
-    // When a node is hovered, dim unrelated edges
-    if (hoveredNode) {
-      return { stroke: 'var(--border)', strokeWidth: 1, opacity: 0.15 };
-    }
-    return { stroke: 'var(--border)', strokeWidth: 1, opacity: 0.4 };
-  }, [currentPageId, hoveredNode]);
+  }, [selectedNode, onSelectPage, onClose, focusNode]);
 
-  // Determine node opacity for hover highlighting
+  /* ---- Deselect on background click ---- */
+  const handleBgClick = useCallback(() => {
+    setSelectedNode(null);
+  }, []);
+
+  /* ---- Active (highlighted) node: either hovered or selected ---- */
+  const activeNode = hoveredNode || selectedNode;
+
+  /* ---- Theme-aware colors ---- */
+  const getTheme = useCallback((cat: NodeCategory) => {
+    return isDark ? CATEGORY_THEMES[cat].dark : CATEGORY_THEMES[cat].light;
+  }, [isDark]);
+
+  /* ---- Node opacity for highlight ---- */
   const getNodeOpacity = useCallback((nodeId: string): number => {
-    if (!hoveredNode) return 1;
-    if (nodeId === hoveredNode) return 1;
-    if (connectedTo.get(hoveredNode)?.has(nodeId)) return 1;
-    return 0.25;
-  }, [hoveredNode, connectedTo]);
+    if (!activeNode) return 1;
+    if (nodeId === activeNode) return 1;
+    if (connectedTo.get(activeNode)?.has(nodeId)) return 1;
+    return 0.15;
+  }, [activeNode, connectedTo]);
+
+  /* ---- Edge style ---- */
+  const getEdgeOpacity = useCallback((edge: GraphEdge): { opacity: number; highlighted: boolean } => {
+    const isActive = activeNode && (edge.source === activeNode || edge.target === activeNode);
+    if (isActive) return { opacity: 0.9, highlighted: true };
+    if (activeNode) return { opacity: 0.06, highlighted: false };
+    return { opacity: 0.25, highlighted: false };
+  }, [activeNode]);
 
   if (!isOpen) return null;
 
   const pageCount = Object.keys(pages).length;
 
+  /* ---- Colours for the current theme ---- */
+  const bgColor = isDark ? '#0a0e1a' : '#f8fafc';
+  const gridColor = isDark ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.04)';
+  const edgeDefaultColor = isDark ? 'rgba(148,163,184,0.35)' : 'rgba(100,116,139,0.3)';
+  const edgeHighlightColor = isDark ? '#60a5fa' : '#3b82f6';
+
   return (
     <div
       className="fixed inset-0 z-40 flex items-start justify-center"
-      style={{ backgroundColor: 'color-mix(in srgb, var(--background) 80%, transparent)' }}
-      onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
-      }}
+      style={{ backgroundColor: isDark ? 'rgba(0,0,0,0.7)' : 'rgba(0,0,0,0.4)' }}
+      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
-      {/* Backdrop blur layer */}
+      {/* Backdrop blur */}
       <div className="absolute inset-0 backdrop-blur-sm pointer-events-none" />
 
       {/* Modal container */}
       <div
         ref={containerRef}
-        className="relative max-w-5xl w-full mx-auto mt-[5vh] bg-card border border-border rounded-xl elevation-4 overflow-hidden flex flex-col"
-        style={{ maxHeight: '85vh' }}
+        className="relative max-w-6xl w-full mx-4 mt-[3vh] flex flex-col overflow-hidden"
+        style={{
+          maxHeight: '92vh',
+          borderRadius: '16px',
+          border: `1px solid ${isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)'}`,
+          backgroundColor: isDark ? '#0f172a' : '#ffffff',
+          boxShadow: isDark
+            ? '0 25px 50px -12px rgba(0,0,0,0.6), 0 0 0 1px rgba(255,255,255,0.05)'
+            : '0 25px 50px -12px rgba(0,0,0,0.2), 0 0 0 1px rgba(0,0,0,0.05)',
+        }}
       >
-        {/* Header */}
-        <div className="flex items-center justify-between px-5 py-3 border-b border-border bg-muted/30">
+        {/* ---- Header / Toolbar ---- */}
+        <div
+          className="flex items-center justify-between px-5 py-3 shrink-0"
+          style={{
+            borderBottom: `1px solid ${isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)'}`,
+            backgroundColor: isDark ? 'rgba(15,23,42,0.9)' : 'rgba(248,250,252,0.9)',
+          }}
+        >
+          {/* Left: title + stats */}
           <div className="flex items-center gap-3">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-primary">
-              <circle cx="6" cy="6" r="3" />
-              <circle cx="18" cy="6" r="3" />
-              <circle cx="12" cy="18" r="3" />
-              <line x1="8.5" y1="7.5" x2="10.5" y2="16" />
-              <line x1="15.5" y1="7.5" x2="13.5" y2="16" />
-              <line x1="9" y1="6" x2="15" y2="6" />
-            </svg>
-            <h2 className="text-title-md text-foreground">Page Relationships</h2>
-            <span className="text-body-sm text-muted-foreground">
-              {layoutNodes.length} pages, {edges.length} connections
-            </span>
+            <div
+              className="flex items-center justify-center w-8 h-8 rounded-lg"
+              style={{
+                backgroundColor: isDark ? 'rgba(96,165,250,0.15)' : 'rgba(59,130,246,0.1)',
+              }}
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={isDark ? '#60a5fa' : '#3b82f6'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="6" cy="6" r="3" />
+                <circle cx="18" cy="6" r="3" />
+                <circle cx="12" cy="18" r="3" />
+                <line x1="8.5" y1="7.5" x2="10.5" y2="16" />
+                <line x1="15.5" y1="7.5" x2="13.5" y2="16" />
+                <line x1="9" y1="6" x2="15" y2="6" />
+              </svg>
+            </div>
+            <div>
+              <h2 className="text-sm font-semibold" style={{ color: isDark ? '#e2e8f0' : '#1e293b' }}>
+                Page Relationships
+              </h2>
+              <span className="text-xs" style={{ color: isDark ? '#94a3b8' : '#64748b' }}>
+                {layoutNodes.length} pages &middot; {edges.length} connections
+              </span>
+            </div>
           </div>
-          <button
-            onClick={onClose}
-            className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
-            aria-label="Close graph"
+
+          {/* Center: layout switcher */}
+          <div
+            className="flex items-center rounded-lg p-0.5 gap-0.5"
+            style={{
+              backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)',
+            }}
           >
-            <FaTimes className="h-4 w-4" />
-          </button>
+            {([
+              { mode: 'force' as LayoutMode, icon: <FaProjectDiagram className="w-3 h-3" />, label: 'Force' },
+              { mode: 'hierarchical' as LayoutMode, icon: <FaSitemap className="w-3 h-3" />, label: 'Tree' },
+              { mode: 'radial' as LayoutMode, icon: <FaDotCircle className="w-3 h-3" />, label: 'Radial' },
+            ]).map(({ mode, icon, label }) => (
+              <button
+                key={mode}
+                onClick={() => setLayoutMode(mode)}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all duration-150"
+                style={{
+                  backgroundColor: layoutMode === mode
+                    ? (isDark ? 'rgba(96,165,250,0.2)' : 'rgba(59,130,246,0.12)')
+                    : 'transparent',
+                  color: layoutMode === mode
+                    ? (isDark ? '#93c5fd' : '#2563eb')
+                    : (isDark ? '#94a3b8' : '#64748b'),
+                }}
+              >
+                {icon}
+                <span className="hidden sm:inline">{label}</span>
+              </button>
+            ))}
+          </div>
+
+          {/* Right: zoom controls + close */}
+          <div className="flex items-center gap-1">
+            <button
+              onClick={zoomIn}
+              className="p-2 rounded-lg transition-colors"
+              style={{
+                color: isDark ? '#94a3b8' : '#64748b',
+                backgroundColor: 'transparent',
+              }}
+              onMouseEnter={(e) => e.currentTarget.style.backgroundColor = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)'}
+              onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+              aria-label="Zoom in"
+              title="Zoom in"
+            >
+              <FaSearchPlus className="w-3.5 h-3.5" />
+            </button>
+            <button
+              onClick={zoomOut}
+              className="p-2 rounded-lg transition-colors"
+              style={{
+                color: isDark ? '#94a3b8' : '#64748b',
+                backgroundColor: 'transparent',
+              }}
+              onMouseEnter={(e) => e.currentTarget.style.backgroundColor = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)'}
+              onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+              aria-label="Zoom out"
+              title="Zoom out"
+            >
+              <FaSearchMinus className="w-3.5 h-3.5" />
+            </button>
+            <button
+              onClick={fitToView}
+              className="p-2 rounded-lg transition-colors"
+              style={{
+                color: isDark ? '#94a3b8' : '#64748b',
+                backgroundColor: 'transparent',
+              }}
+              onMouseEnter={(e) => e.currentTarget.style.backgroundColor = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)'}
+              onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+              aria-label="Fit to view"
+              title="Fit to view"
+            >
+              <FaExpand className="w-3.5 h-3.5" />
+            </button>
+
+            <div className="w-px h-5 mx-1" style={{ backgroundColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)' }} />
+
+            <button
+              onClick={onClose}
+              className="p-2 rounded-lg transition-colors"
+              style={{
+                color: isDark ? '#94a3b8' : '#64748b',
+                backgroundColor: 'transparent',
+              }}
+              onMouseEnter={(e) => e.currentTarget.style.backgroundColor = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)'}
+              onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+              aria-label="Close graph"
+            >
+              <FaTimes className="w-3.5 h-3.5" />
+            </button>
+          </div>
         </div>
 
-        {/* Graph area */}
-        <div className="flex-1 relative" style={{ minHeight: '400px' }}>
+        {/* ---- Graph area ---- */}
+        <div className="flex-1 relative" style={{ minHeight: '500px' }}>
           {pageCount < 3 ? (
-            <div className="flex items-center justify-center h-full min-h-[400px] text-muted-foreground text-body-md">
-              Not enough pages to display a graph
+            <div
+              className="flex items-center justify-center h-full min-h-[500px] text-sm"
+              style={{ color: isDark ? '#64748b' : '#94a3b8' }}
+            >
+              Not enough pages to display a graph (need at least 3)
             </div>
           ) : (
             <>
               <svg
                 ref={svgRef}
                 className="w-full h-full"
-                style={{ minHeight: '400px', cursor: isPanning.current ? 'grabbing' : 'grab' }}
+                style={{ minHeight: '500px', cursor: isPanning.current ? 'grabbing' : 'grab' }}
                 viewBox={`${viewBox.x} ${viewBox.y} ${viewBox.w} ${viewBox.h}`}
                 preserveAspectRatio="xMidYMid meet"
                 onMouseDown={handleMouseDown}
@@ -469,154 +969,318 @@ export default function DependencyGraph({
                 onWheel={handleWheel}
               >
                 <defs>
-                  {/* Glow filter for the current page node */}
-                  <filter id="glow-current" x="-50%" y="-50%" width="200%" height="200%">
-                    <feGaussianBlur stdDeviation="4" result="blur" />
+                  {/* Arrow marker */}
+                  <marker
+                    id="arrow-default"
+                    viewBox="0 0 10 8"
+                    refX="10"
+                    refY="4"
+                    markerWidth="8"
+                    markerHeight="6"
+                    orient="auto-start-reverse"
+                  >
+                    <path d="M 0 0 L 10 4 L 0 8 Z" fill={edgeDefaultColor} />
+                  </marker>
+                  <marker
+                    id="arrow-highlight"
+                    viewBox="0 0 10 8"
+                    refX="10"
+                    refY="4"
+                    markerWidth="8"
+                    markerHeight="6"
+                    orient="auto-start-reverse"
+                  >
+                    <path d="M 0 0 L 10 4 L 0 8 Z" fill={edgeHighlightColor} />
+                  </marker>
+
+                  {/* Glow filter for selected / current nodes */}
+                  <filter id="node-glow" x="-30%" y="-30%" width="160%" height="160%">
+                    <feGaussianBlur stdDeviation="6" result="blur" />
                     <feMerge>
                       <feMergeNode in="blur" />
                       <feMergeNode in="SourceGraphic" />
                     </feMerge>
                   </filter>
 
-                  {/* Pulse animation for current page */}
-                  <style>{`
-                    @keyframes pulse-ring {
-                      0% { opacity: 0.6; r: 28; }
-                      50% { opacity: 0.2; r: 34; }
-                      100% { opacity: 0.6; r: 28; }
-                    }
-                    .pulse-ring {
-                      animation: pulse-ring 2s ease-in-out infinite;
-                    }
-                  `}</style>
+                  {/* Subtle shadow for all nodes */}
+                  <filter id="node-shadow" x="-10%" y="-10%" width="120%" height="130%">
+                    <feDropShadow dx="0" dy="2" stdDeviation="3" floodColor={isDark ? 'rgba(0,0,0,0.5)' : 'rgba(0,0,0,0.12)'} floodOpacity="1" />
+                  </filter>
                 </defs>
 
-                {/* Background rect for pan detection */}
+                {/* Background */}
                 <rect
                   className="graph-bg"
-                  x={viewBox.x - 1000}
-                  y={viewBox.y - 1000}
-                  width={viewBox.w + 2000}
-                  height={viewBox.h + 2000}
-                  fill="transparent"
+                  x={viewBox.x - 2000}
+                  y={viewBox.y - 2000}
+                  width={viewBox.w + 4000}
+                  height={viewBox.h + 4000}
+                  fill={bgColor}
+                  onClick={handleBgClick}
                 />
 
-                {/* Edges */}
-                {edges.map((edge, i) => {
-                  const source = nodePositions.get(edge.source);
-                  const target = nodePositions.get(edge.target);
-                  if (!source || !target) return null;
+                {/* Grid pattern */}
+                {(() => {
+                  const gridSpacing = 80;
+                  const startX = Math.floor((viewBox.x - 100) / gridSpacing) * gridSpacing;
+                  const startY = Math.floor((viewBox.y - 100) / gridSpacing) * gridSpacing;
+                  const endX = viewBox.x + viewBox.w + 100;
+                  const endY = viewBox.y + viewBox.h + 100;
+                  const lines: React.ReactNode[] = [];
+                  for (let x = startX; x <= endX; x += gridSpacing) {
+                    lines.push(
+                      <line key={`gx-${x}`} x1={x} y1={startY} x2={x} y2={endY} stroke={gridColor} strokeWidth="1" />
+                    );
+                  }
+                  for (let y = startY; y <= endY; y += gridSpacing) {
+                    lines.push(
+                      <line key={`gy-${y}`} x1={startX} y1={y} x2={endX} y2={y} stroke={gridColor} strokeWidth="1" />
+                    );
+                  }
+                  return <g>{lines}</g>;
+                })()}
 
-                  const style = getEdgeStyle(edge);
-                  return (
-                    <line
-                      key={`edge-${i}`}
-                      x1={source.x}
-                      y1={source.y}
-                      x2={target.x}
-                      y2={target.y}
-                      stroke={style.stroke}
-                      strokeWidth={style.strokeWidth}
-                      opacity={style.opacity}
-                    />
-                  );
-                })}
+                {/* Edges */}
+                <g>
+                  {edges.map((edge, i) => {
+                    const source = nodePositions.get(edge.source);
+                    const target = nodePositions.get(edge.target);
+                    if (!source || !target) return null;
+
+                    const { opacity, highlighted } = getEdgeOpacity(edge);
+                    const color = highlighted ? edgeHighlightColor : edgeDefaultColor;
+
+                    return (
+                      <path
+                        key={`edge-${i}`}
+                        d={edgePath(source.x, source.y, target.x, target.y)}
+                        fill="none"
+                        stroke={color}
+                        strokeWidth={highlighted ? 2 : 1}
+                        opacity={opacity}
+                        markerEnd={highlighted ? 'url(#arrow-highlight)' : 'url(#arrow-default)'}
+                        style={{ transition: 'opacity 0.2s ease, stroke 0.2s ease, stroke-width 0.2s ease' }}
+                      />
+                    );
+                  })}
+                </g>
 
                 {/* Nodes */}
-                {layoutNodes.map(node => {
-                  const r = getNodeRadius(node.id, currentPageId, node.importance);
-                  const isCurrent = node.id === currentPageId;
-                  const opacity = getNodeOpacity(node.id);
+                <g>
+                  {layoutNodes.map(node => {
+                    const isCurrent = node.id === currentPageId;
+                    const isSelected = node.id === selectedNode;
+                    const isHighlighted = isCurrent || isSelected;
+                    const opacity = getNodeOpacity(node.id);
+                    const theme = getTheme(node.category);
 
-                  return (
-                    <g
-                      key={node.id}
-                      style={{ cursor: 'pointer', opacity }}
-                      onClick={(e) => { e.stopPropagation(); handleNodeClick(node.id); }}
-                      onMouseEnter={(e) => handleNodeMouseEnter(node.id, e)}
-                      onMouseMove={handleNodeMouseMove}
-                      onMouseLeave={handleNodeMouseLeave}
-                    >
-                      {/* Pulse ring for current page */}
-                      {isCurrent && (
-                        <circle
-                          className="pulse-ring"
-                          cx={node.x}
-                          cy={node.y}
-                          r={28}
-                          fill="none"
-                          stroke="var(--primary)"
-                          strokeWidth="2"
-                        />
-                      )}
+                    const w = getNodeWidth(node, currentPageId);
+                    const h = getNodeHeight(node, currentPageId);
+                    const rx = NODE_RADIUS;
 
-                      {/* Node circle */}
-                      <circle
-                        cx={node.x}
-                        cy={node.y}
-                        r={r}
-                        fill={getNodeFill(node.id, node.importance)}
-                        stroke={getNodeStroke(node.id)}
-                        strokeWidth={isCurrent ? 2.5 : node.id === hoveredNode ? 2 : 1.5}
-                        filter={isCurrent ? 'url(#glow-current)' : undefined}
-                      />
-
-                      {/* Label */}
-                      <text
-                        x={node.x}
-                        y={node.y + r + 14}
-                        textAnchor="middle"
-                        className="text-label-sm"
-                        fill="var(--foreground)"
-                        style={{ fontSize: '11px', fontWeight: 500, pointerEvents: 'none', userSelect: 'none' }}
+                    return (
+                      <g
+                        key={node.id}
+                        className="graph-node"
+                        style={{
+                          cursor: 'pointer',
+                          opacity,
+                          transition: 'opacity 0.2s ease',
+                        }}
+                        onClick={(e) => handleNodeClick(node.id, e)}
+                        onMouseEnter={(e) => handleNodeMouseEnter(node.id, e)}
+                        onMouseMove={handleNodeMouseMove}
+                        onMouseLeave={handleNodeMouseLeave}
                       >
-                        {truncate(node.title, 20)}
-                      </text>
-                    </g>
-                  );
-                })}
+                        {/* Highlight glow ring for current / selected */}
+                        {isHighlighted && (
+                          <rect
+                            x={node.x - w / 2 - 4}
+                            y={node.y - h / 2 - 4}
+                            width={w + 8}
+                            height={h + 8}
+                            rx={rx + 4}
+                            ry={rx + 4}
+                            fill="none"
+                            stroke={isCurrent ? (isDark ? '#60a5fa' : '#3b82f6') : theme.border}
+                            strokeWidth="2"
+                            opacity="0.4"
+                            filter="url(#node-glow)"
+                          />
+                        )}
+
+                        {/* Main rectangle */}
+                        <rect
+                          x={node.x - w / 2}
+                          y={node.y - h / 2}
+                          width={w}
+                          height={h}
+                          rx={rx}
+                          ry={rx}
+                          fill={theme.bg}
+                          stroke={
+                            node.id === hoveredNode
+                              ? (isDark ? '#60a5fa' : '#3b82f6')
+                              : isHighlighted
+                                ? (isCurrent ? (isDark ? '#60a5fa' : '#3b82f6') : theme.border)
+                                : theme.border
+                          }
+                          strokeWidth={isHighlighted ? 2 : node.id === hoveredNode ? 2 : 1.2}
+                          filter="url(#node-shadow)"
+                        />
+
+                        {/* Category indicator stripe on the left */}
+                        <rect
+                          x={node.x - w / 2 + 1}
+                          y={node.y - h / 2 + rx}
+                          width={3}
+                          height={h - rx * 2}
+                          fill={theme.border}
+                        />
+
+                        {/* Node title text */}
+                        <text
+                          x={node.x + 2}
+                          y={node.y - 2}
+                          textAnchor="middle"
+                          dominantBaseline="auto"
+                          fill={theme.text}
+                          style={{
+                            fontSize: isCurrent ? '12px' : '11px',
+                            fontWeight: 600,
+                            pointerEvents: 'none',
+                            userSelect: 'none',
+                            letterSpacing: '0.01em',
+                          }}
+                        >
+                          {truncate(node.title, 22)}
+                        </text>
+
+                        {/* Importance badge */}
+                        <text
+                          x={node.x + 2}
+                          y={node.y + 13}
+                          textAnchor="middle"
+                          dominantBaseline="auto"
+                          fill={theme.text}
+                          style={{
+                            fontSize: '9px',
+                            fontWeight: 400,
+                            opacity: 0.6,
+                            pointerEvents: 'none',
+                            userSelect: 'none',
+                            textTransform: 'uppercase',
+                            letterSpacing: '0.05em',
+                          }}
+                        >
+                          {CATEGORY_THEMES[node.category].label}
+                        </text>
+                      </g>
+                    );
+                  })}
+                </g>
               </svg>
 
               {/* Tooltip */}
               {tooltip && (
                 <div
-                  className="fixed z-50 px-2.5 py-1.5 rounded-md bg-popover border border-border elevation-3 text-body-sm text-popover-foreground pointer-events-none"
+                  className="fixed z-50 pointer-events-none"
                   style={{
-                    left: tooltip.x + 12,
-                    top: tooltip.y - 8,
-                    maxWidth: '280px',
-                    whiteSpace: 'nowrap',
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
+                    left: tooltip.x + 14,
+                    top: tooltip.y - 12,
+                    maxWidth: '320px',
                   }}
                 >
-                  {tooltip.title}
+                  <div
+                    className="px-3 py-2 rounded-lg text-xs"
+                    style={{
+                      backgroundColor: isDark ? '#1e293b' : '#ffffff',
+                      border: `1px solid ${isDark ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.1)'}`,
+                      boxShadow: isDark
+                        ? '0 8px 16px rgba(0,0,0,0.4)'
+                        : '0 8px 16px rgba(0,0,0,0.12)',
+                      color: isDark ? '#e2e8f0' : '#1e293b',
+                    }}
+                  >
+                    <div className="font-semibold mb-0.5" style={{ fontSize: '12px' }}>
+                      {tooltip.title}
+                    </div>
+                    <div style={{ fontSize: '10px', color: isDark ? '#94a3b8' : '#64748b' }}>
+                      {CATEGORY_THEMES[tooltip.category].label} &middot; Click to focus, double-click to open
+                    </div>
+                  </div>
                 </div>
               )}
 
               {/* Legend */}
-              <div className="absolute bottom-3 left-3 flex items-center gap-4 px-3 py-2 rounded-lg bg-card/90 border border-border text-body-sm text-muted-foreground backdrop-blur-sm">
-                <div className="flex items-center gap-1.5">
-                  <span className="inline-block w-3 h-3 rounded-full" style={{ backgroundColor: 'var(--primary)' }} />
-                  <span>Current</span>
+              <div
+                className="absolute bottom-3 left-3 rounded-xl overflow-hidden"
+                style={{
+                  backgroundColor: isDark ? 'rgba(15,23,42,0.92)' : 'rgba(255,255,255,0.92)',
+                  border: `1px solid ${isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)'}`,
+                  backdropFilter: 'blur(12px)',
+                  boxShadow: isDark
+                    ? '0 4px 12px rgba(0,0,0,0.3)'
+                    : '0 4px 12px rgba(0,0,0,0.08)',
+                }}
+              >
+                <div
+                  className="px-3 py-1.5 text-xs font-semibold"
+                  style={{
+                    borderBottom: `1px solid ${isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)'}`,
+                    color: isDark ? '#94a3b8' : '#64748b',
+                    letterSpacing: '0.04em',
+                    textTransform: 'uppercase',
+                    fontSize: '9px',
+                  }}
+                >
+                  Legend
                 </div>
-                <div className="flex items-center gap-1.5">
-                  <span className="inline-block w-3 h-3 rounded-full" style={{ backgroundColor: 'color-mix(in srgb, var(--primary) 60%, transparent)' }} />
-                  <span>High</span>
-                </div>
-                <div className="flex items-center gap-1.5">
-                  <span className="inline-block w-3 h-3 rounded-full" style={{ backgroundColor: 'var(--muted)' }} />
-                  <span>Medium</span>
-                </div>
-                <div className="flex items-center gap-1.5">
-                  <span className="inline-block w-3 h-3 rounded-full" style={{ backgroundColor: 'color-mix(in srgb, var(--muted) 60%, transparent)' }} />
-                  <span>Low</span>
+                <div className="px-3 py-2 flex flex-col gap-1.5">
+                  {(Object.entries(CATEGORY_THEMES) as [NodeCategory, CategoryTheme][])
+                    .filter(([cat]) => presentCategories.has(cat))
+                    .map(([cat, theme]) => {
+                      const t = isDark ? theme.dark : theme.light;
+                      return (
+                        <div key={cat} className="flex items-center gap-2">
+                          <div
+                            className="w-3 h-3 rounded-sm"
+                            style={{
+                              backgroundColor: t.bg,
+                              border: `1.5px solid ${t.border}`,
+                            }}
+                          />
+                          <span
+                            className="text-xs"
+                            style={{
+                              color: isDark ? '#cbd5e1' : '#475569',
+                              fontSize: '11px',
+                            }}
+                          >
+                            {theme.label}
+                          </span>
+                        </div>
+                      );
+                    })}
                 </div>
               </div>
 
-              {/* Zoom hint */}
-              <div className="absolute bottom-3 right-3 px-3 py-2 rounded-lg bg-card/90 border border-border text-body-sm text-muted-foreground backdrop-blur-sm">
-                Scroll to zoom, drag to pan
+              {/* Interaction hint */}
+              <div
+                className="absolute bottom-3 right-3 px-3 py-2 rounded-xl text-xs"
+                style={{
+                  backgroundColor: isDark ? 'rgba(15,23,42,0.92)' : 'rgba(255,255,255,0.92)',
+                  border: `1px solid ${isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)'}`,
+                  backdropFilter: 'blur(12px)',
+                  color: isDark ? '#64748b' : '#94a3b8',
+                  boxShadow: isDark
+                    ? '0 4px 12px rgba(0,0,0,0.3)'
+                    : '0 4px 12px rgba(0,0,0,0.08)',
+                }}
+              >
+                <span style={{ color: isDark ? '#94a3b8' : '#64748b' }}>
+                  Scroll to zoom &middot; Drag to pan &middot; Click node to focus
+                </span>
               </div>
             </>
           )}

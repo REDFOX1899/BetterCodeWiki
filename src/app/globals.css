@@ -309,3 +309,56 @@ code, pre, .font-mono {
   background-size: 200% 200%;
   animation: gradient-drift 8s ease-in-out infinite;
 }
+
+/* ===== Mermaid Diagram Styling ===== */
+
+/* Container background matches theme */
+.mermaid-diagram-container {
+  background-color: var(--background);
+}
+
+/* Ensure SVG inside the container fills and scales properly.
+   Default (light mode) background is white. */
+.mermaid-diagram-container svg {
+  max-width: 100%;
+  height: auto;
+  min-height: 300px;
+  display: block;
+  margin: 0 auto;
+  background-color: #ffffff !important;
+}
+
+/* Dark mode: force dark background on SVG — overrides the above */
+.dark .mermaid-diagram-container svg {
+  background-color: #0a0f1a !important;
+}
+
+/* Also handle data-theme attribute for dark mode */
+[data-theme="dark"] .mermaid-diagram-container svg {
+  background-color: #0a0f1a !important;
+}
+
+/* Ensure SVG pan-zoom control icons are visible in both modes */
+.mermaid-diagram-container .svg-pan-zoom-control {
+  cursor: pointer;
+}
+
+/* Light mode (default): svg-pan-zoom control icons */
+.mermaid-diagram-container .svg-pan-zoom-control > g > rect {
+  fill: #f8fafc !important;
+  stroke: #cbd5e1 !important;
+}
+.mermaid-diagram-container .svg-pan-zoom-control > g > g {
+  fill: #1e293b !important;
+}
+
+/* Dark mode: svg-pan-zoom control icons */
+.dark .mermaid-diagram-container .svg-pan-zoom-control > g > rect,
+[data-theme="dark"] .mermaid-diagram-container .svg-pan-zoom-control > g > rect {
+  fill: #1e293b !important;
+  stroke: #334155 !important;
+}
+.dark .mermaid-diagram-container .svg-pan-zoom-control > g > g,
+[data-theme="dark"] .mermaid-diagram-container .svg-pan-zoom-control > g > g {
+  fill: #f1f5f9 !important;
+}

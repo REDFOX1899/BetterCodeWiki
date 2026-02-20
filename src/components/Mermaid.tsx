@@ -95,7 +95,9 @@ const DARK_THEME = {
 
 function isDarkMode(): boolean {
   if (typeof document === 'undefined') return false;
-  return document.documentElement.classList.contains('dark');
+  const el = document.documentElement;
+  // Check both .dark class (next-themes attribute="class") and data-theme attribute
+  return el.classList.contains('dark') || el.getAttribute('data-theme') === 'dark';
 }
 
 function initializeMermaid(dark: boolean) {
@@ -111,12 +113,27 @@ function initializeMermaid(dark: boolean) {
     flowchart: {
       htmlLabels: true,
       curve: 'basis',
-      nodeSpacing: 50,
-      rankSpacing: 50,
-      padding: 15,
+      nodeSpacing: 80,
+      rankSpacing: 70,
+      padding: 20,
+      useMaxWidth: false,
+    },
+    sequence: {
+      useMaxWidth: false,
+      boxMargin: 12,
+      noteMargin: 12,
+      actorMargin: 80,
+      mirrorActors: true,
     },
     themeVariables: vars,
     themeCSS: `
+      /* ============================================================
+         SVG root background — ensures proper background in both modes
+         ============================================================ */
+      .mermaid-main-svg {
+        background-color: ${dark ? '#0a0f1a' : '#ffffff'} !important;
+      }
+
       /* ============================================================
          Flow animation keyframes — makes arrow direction obvious
          ============================================================ */
@@ -199,7 +216,9 @@ function initializeMermaid(dark: boolean) {
         overflow: visible;
       }
       .nodeLabel {
-        padding: 8px 12px !important;
+        padding: 10px 16px !important;
+        font-size: 14px !important;
+        line-height: 1.4 !important;
       }
 
       /* ============================================================
@@ -505,8 +524,53 @@ function initializeMermaid(dark: boolean) {
   });
 }
 
-// Initialize with current theme
-initializeMermaid(isDarkMode());
+// Initialize with current theme (deferred to avoid SSR issues)
+if (typeof document !== 'undefined') {
+  initializeMermaid(isDarkMode());
+}
+
+/**
+ * Post-process the rendered SVG to ensure:
+ * 1. The SVG has an explicit background color matching the theme
+ * 2. The SVG has proper sizing attributes for readability
+ * 3. The viewBox allows the diagram to scale properly
+ */
+function postProcessSvg(svgString: string, dark: boolean): string {
+  const bgColor = dark ? '#0a0f1a' : '#ffffff';
+
+  // Parse the SVG to manipulate it
+  const parser = new DOMParser();
+  const doc = parser.parseFromString(svgString, 'image/svg+xml');
+  const svgEl = doc.querySelector('svg');
+
+  if (svgEl) {
+    // Set explicit background via style attribute on the SVG element
+    const existingStyle = svgEl.getAttribute('style') || '';
+    svgEl.setAttribute('style', `${existingStyle}; background-color: ${bgColor}; border-radius: 8px;`);
+
+    // Ensure the SVG scales nicely - remove fixed max-width if any
+    svgEl.removeAttribute('width');
+    svgEl.setAttribute('width', '100%');
+
+    // Ensure a minimum height so diagrams aren't tiny
+    const viewBox = svgEl.getAttribute('viewBox');
+    if (viewBox) {
+      const parts = viewBox.split(/\s+/);
+      if (parts.length === 4) {
+        const vbHeight = parseFloat(parts[3]);
+        // Set a reasonable min-height based on viewBox, with a floor of 300px
+        const minH = Math.max(300, Math.min(vbHeight, 800));
+        svgEl.style.minHeight = `${minH}px`;
+      }
+    }
+
+    // Serialize back
+    const serializer = new XMLSerializer();
+    return serializer.serializeToString(svgEl);
+  }
+
+  return svgString;
+}
 
 interface MermaidProps {
   chart: string;
@@ -626,7 +690,7 @@ const FullScreenModal: React.FC<{
         </div>
 
         {/* Modal content with zoom */}
-        <div className="overflow-auto p-6 flex-1 flex items-center justify-center bg-muted/20">
+        <div className="overflow-auto p-6 flex-1 flex items-center justify-center bg-background">
           <div
             style={{
               transform: `scale(${zoom})`,
@@ -651,7 +715,7 @@ const Mermaid: React.FC<MermaidProps> = ({ chart, className = '', zoomingEnabled
   const containerRef = useRef<HTMLDivElement>(null);
   const idRef = useRef(`mermaid-${Math.random().toString(36).substring(2, 9)}`);
 
-  // Watch for theme changes (next-themes adds/removes .dark on <html>)
+  // Watch for theme changes (next-themes adds/removes .dark class or data-theme attr on <html>)
   useEffect(() => {
     const observer = new MutationObserver(() => {
       const dark = isDarkMode();
@@ -662,7 +726,7 @@ const Mermaid: React.FC<MermaidProps> = ({ chart, className = '', zoomingEnabled
     });
     observer.observe(document.documentElement, {
       attributes: true,
-      attributeFilter: ['class'],
+      attributeFilter: ['class', 'data-theme'],
     });
     return () => observer.disconnect();
   }, []);
@@ -673,10 +737,11 @@ const Mermaid: React.FC<MermaidProps> = ({ chart, className = '', zoomingEnabled
       const initializePanZoom = async () => {
         const svgElement = containerRef.current?.querySelector("svg");
         if (svgElement) {
-          // Remove any max-width constraints
+          // Remove any max-width constraints but keep height responsive
           svgElement.style.maxWidth = "none";
           svgElement.style.width = "100%";
           svgElement.style.height = "100%";
+          svgElement.style.minHeight = "500px";
 
           try {
             // Dynamically import svg-pan-zoom only when needed in the browser
@@ -700,12 +765,16 @@ const Mermaid: React.FC<MermaidProps> = ({ chart, className = '', zoomingEnabled
       // Wait for the SVG to be rendered
       setTimeout(() => {
         void initializePanZoom();
-      }, 100);
+      }, 150);
     }
   }, [svg, zoomingEnabled]);
 
   const renderChart = useCallback(async (isMountedRef: { current: boolean }) => {
     if (!chart || !isMountedRef.current) return;
+
+    // Ensure mermaid is initialized with current theme before render
+    const dark = isDarkMode();
+    initializeMermaid(dark);
 
     try {
       setError(null);
@@ -715,7 +784,9 @@ const Mermaid: React.FC<MermaidProps> = ({ chart, className = '', zoomingEnabled
 
       if (!isMountedRef.current) return;
 
-      setSvg(renderedSvg);
+      // Post-process the SVG to ensure proper background and sizing
+      const processed = postProcessSvg(renderedSvg, dark);
+      setSvg(processed);
     } catch (err) {
       console.error('Mermaid rendering error:', err);
 
@@ -767,7 +838,7 @@ const Mermaid: React.FC<MermaidProps> = ({ chart, className = '', zoomingEnabled
 
   if (!svg) {
     return (
-      <div className={`flex justify-center items-center p-4 bg-muted/10 rounded-lg border border-border/50 ${className}`}>
+      <div className={`flex justify-center items-center p-6 min-h-[200px] bg-muted/10 rounded-lg border border-border/50 ${className}`}>
         <div className="flex items-center space-x-2">
           <div className="w-2 h-2 bg-primary/70 rounded-full animate-pulse"></div>
           <div className="w-2 h-2 bg-primary/70 rounded-full animate-pulse delay-75"></div>
@@ -782,27 +853,27 @@ const Mermaid: React.FC<MermaidProps> = ({ chart, className = '', zoomingEnabled
     <>
       <div
         ref={containerRef}
-        className={`w-full max-w-full ${zoomingEnabled ? "h-[600px] p-4" : ""}`}
+        className={`w-full max-w-full ${zoomingEnabled ? "min-h-[500px] h-[700px] p-4" : ""}`}
       >
         <div
           className={`relative group ${zoomingEnabled ? "h-full rounded-lg border-2 border-border" : ""}`}
         >
           <div
-            className={`flex justify-center overflow-auto text-center my-4 cursor-pointer hover:bg-muted/10 rounded-md transition-colors ${className} ${zoomingEnabled ? "h-full" : ""}`}
+            className={`mermaid-diagram-container flex justify-center overflow-auto text-center my-4 rounded-lg transition-colors border border-border/40 ${className} ${zoomingEnabled ? "h-full" : "min-h-[300px] p-4 cursor-pointer hover:border-primary/30"}`}
             dangerouslySetInnerHTML={{ __html: svg }}
             onClick={zoomingEnabled ? undefined : handleDiagramClick}
             title={zoomingEnabled ? undefined : "Click to view fullscreen"}
           />
 
           {!zoomingEnabled && (
-            <div className="absolute top-2 right-2 bg-popover/80 backdrop-blur text-popover-foreground p-1.5 rounded-md opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex items-center gap-1.5 text-xs shadow-md border border-border pointer-events-none">
-              <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <div className="absolute top-3 right-3 bg-popover/90 backdrop-blur-sm text-popover-foreground px-3 py-2 rounded-md opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex items-center gap-2 text-xs font-medium shadow-lg border border-border pointer-events-none">
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <circle cx="11" cy="11" r="8"></circle>
                 <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
                 <line x1="11" y1="8" x2="11" y2="14"></line>
                 <line x1="8" y1="11" x2="14" y2="11"></line>
               </svg>
-              <span>Click to zoom</span>
+              <span>Click to expand</span>
             </div>
           )}
         </div>
@@ -813,7 +884,7 @@ const Mermaid: React.FC<MermaidProps> = ({ chart, className = '', zoomingEnabled
           isOpen={isFullscreen}
           onClose={() => setIsFullscreen(false)}
         >
-          <div dangerouslySetInnerHTML={{ __html: svg }} />
+          <div className="mermaid-diagram-container" dangerouslySetInnerHTML={{ __html: svg }} />
         </FullScreenModal>
       )}
     </>
