@@ -1,7 +1,8 @@
 'use client';
 
-import React from 'react';
-import { motion } from 'framer-motion';
+import React, { useRef } from 'react';
+import { useGSAP } from '@gsap/react';
+import { gsap } from '@/lib/gsap';
 
 interface ComparisonRow {
   feature: string;
@@ -47,31 +48,92 @@ const XIcon = () => (
 );
 
 export default function ComparisonTable() {
+  const sectionRef = useRef<HTMLElement>(null);
+
+  useGSAP(
+    () => {
+      // Section header: fade-in
+      const headerTl = gsap.timeline({
+        scrollTrigger: {
+          trigger: '.ct-header',
+          start: 'top 85%',
+          once: true,
+        },
+      });
+      headerTl.from('.ct-header h2', {
+        opacity: 0,
+        y: 20,
+        duration: 0.5,
+        ease: 'power2.out',
+      });
+      headerTl.from(
+        '.ct-header p',
+        {
+          opacity: 0,
+          y: 20,
+          duration: 0.5,
+          ease: 'power2.out',
+        },
+        '-=0.3'
+      );
+
+      // Table wrapper: slides up
+      gsap.from('.ct-table', {
+        scrollTrigger: {
+          trigger: '.ct-table',
+          start: 'top 85%',
+          once: true,
+        },
+        opacity: 0,
+        y: 24,
+        duration: 0.5,
+        ease: 'power2.out',
+      });
+
+      // Rows: animate in one by one with stagger
+      gsap.from('.ct-row', {
+        scrollTrigger: {
+          trigger: '.ct-table',
+          start: 'top 80%',
+          once: true,
+        },
+        opacity: 0,
+        x: -20,
+        duration: 0.4,
+        stagger: 0.08,
+        ease: 'power2.out',
+      });
+
+      // Check/X icons: pop in after row appears
+      gsap.from('.ct-icon', {
+        scrollTrigger: {
+          trigger: '.ct-table',
+          start: 'top 80%',
+          once: true,
+        },
+        scale: 0,
+        duration: 0.3,
+        stagger: 0.08,
+        delay: 0.1,
+        ease: 'back.out(1.7)',
+      });
+    },
+    { scope: sectionRef }
+  );
+
   return (
-    <section className="py-24 px-6">
+    <section ref={sectionRef} className="py-24 px-6">
       <div className="max-w-3xl mx-auto">
         {/* Section Header */}
-        <motion.div
-          className="text-center mb-16"
-          initial={{ opacity: 0, y: 20 }}
-          whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true }}
-          transition={{ duration: 0.5 }}
-        >
+        <div className="ct-header text-center mb-16">
           <h2 className="text-display-sm text-foreground mb-4">Built Different</h2>
           <p className="text-body-lg text-muted-foreground max-w-xl mx-auto">
             See how BetterCodeWiki compares to closed-source alternatives.
           </p>
-        </motion.div>
+        </div>
 
         {/* Comparison Table */}
-        <motion.div
-          className="rounded-xl border border-border overflow-hidden"
-          initial={{ opacity: 0, y: 24 }}
-          whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true }}
-          transition={{ duration: 0.5, delay: 0.1 }}
-        >
+        <div className="ct-table rounded-xl border border-border overflow-hidden">
           {/* Table Header */}
           <div className="grid grid-cols-[1fr_140px_140px] md:grid-cols-[1fr_160px_160px] bg-muted/50">
             <div className="px-6 py-4 text-label-lg text-muted-foreground">
@@ -89,7 +151,7 @@ export default function ComparisonTable() {
           {rows.map((row, i) => (
             <div
               key={row.feature}
-              className={`grid grid-cols-[1fr_140px_140px] md:grid-cols-[1fr_160px_160px] ${
+              className={`ct-row grid grid-cols-[1fr_140px_140px] md:grid-cols-[1fr_160px_160px] ${
                 i % 2 === 0 ? 'bg-card' : 'bg-card/50'
               } ${i < rows.length - 1 ? 'border-b border-border/50' : ''}`}
             >
@@ -97,14 +159,18 @@ export default function ComparisonTable() {
                 {row.feature}
               </div>
               <div className="px-6 py-4 flex items-center justify-center">
-                {row.us ? <CheckIcon /> : <XIcon />}
+                <span className="ct-icon inline-flex">
+                  {row.us ? <CheckIcon /> : <XIcon />}
+                </span>
               </div>
               <div className="px-6 py-4 flex items-center justify-center">
-                {row.them ? <CheckIcon /> : <XIcon />}
+                <span className="ct-icon inline-flex">
+                  {row.them ? <CheckIcon /> : <XIcon />}
+                </span>
               </div>
             </div>
           ))}
-        </motion.div>
+        </div>
       </div>
     </section>
   );

@@ -1,7 +1,8 @@
 'use client';
 
-import React from 'react';
-import { motion } from 'framer-motion';
+import React, { useRef } from 'react';
+import { useGSAP } from '@gsap/react';
+import { gsap } from '@/lib/gsap';
 
 interface FooterCTAProps {
   onSubmit: (e: React.FormEvent) => void;
@@ -16,43 +17,69 @@ export default function FooterCTA({
   onChange,
   isSubmitting,
 }: FooterCTAProps) {
+  const sectionRef = useRef<HTMLElement>(null);
+
+  useGSAP(
+    () => {
+      // Header and subtitle: GSAP fade-up
+      const headerTl = gsap.timeline({
+        scrollTrigger: {
+          trigger: '.fct-header',
+          start: 'top 85%',
+          once: true,
+        },
+      });
+      headerTl.from('.fct-header h2', {
+        opacity: 0,
+        y: 20,
+        duration: 0.5,
+        ease: 'power2.out',
+      });
+      headerTl.from(
+        '.fct-header p',
+        {
+          opacity: 0,
+          y: 20,
+          duration: 0.5,
+          ease: 'power2.out',
+        },
+        '-=0.3'
+      );
+
+      // Form: slide-up with slight bounce easing
+      gsap.from('.fct-form', {
+        scrollTrigger: {
+          trigger: '.fct-form',
+          start: 'top 85%',
+          once: true,
+        },
+        opacity: 0,
+        y: 20,
+        duration: 0.6,
+        ease: 'back.out(1.2)',
+      });
+    },
+    { scope: sectionRef }
+  );
+
   return (
-    <section className="py-24 px-6 relative overflow-hidden">
-      {/* Gradient background accent */}
-      <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_bottom,_var(--tw-gradient-stops))] from-primary/10 via-background to-background pointer-events-none" />
+    <section ref={sectionRef} className="py-24 px-6 relative overflow-hidden">
+      {/* Gradient background accent with subtle animation */}
+      <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_bottom,_var(--tw-gradient-stops))] from-primary/10 via-background to-background pointer-events-none animate-gradient-drift" />
 
       <div className="relative max-w-3xl mx-auto text-center">
-        {/* Header */}
-        <motion.h2
-          className="text-display-sm text-foreground mb-4"
-          initial={{ opacity: 0, y: 20 }}
-          whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true }}
-          transition={{ duration: 0.5 }}
-        >
-          Ready to Understand Your Code?
-        </motion.h2>
-
-        {/* Subtitle */}
-        <motion.p
-          className="text-body-lg text-muted-foreground mb-10 max-w-xl mx-auto"
-          initial={{ opacity: 0, y: 20 }}
-          whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true }}
-          transition={{ duration: 0.5, delay: 0.1 }}
-        >
-          Paste a repository URL and generate your wiki in under 60 seconds.
-        </motion.p>
+        {/* Header + Subtitle wrapper */}
+        <div className="fct-header">
+          <h2 className="text-display-sm text-foreground mb-4">
+            Ready to Understand Your Code?
+          </h2>
+          <p className="text-body-lg text-muted-foreground mb-10 max-w-xl mx-auto">
+            Paste a repository URL and generate your wiki in under 60 seconds.
+          </p>
+        </div>
 
         {/* Search Form (same pattern as hero) */}
-        <motion.form
-          onSubmit={onSubmit}
-          className="max-w-2xl mx-auto"
-          initial={{ opacity: 0, y: 20 }}
-          whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true }}
-          transition={{ duration: 0.5, delay: 0.2 }}
-        >
+        <form onSubmit={onSubmit} className="fct-form max-w-2xl mx-auto">
           <div className="relative flex items-center">
             <div className="absolute left-4 text-muted-foreground pointer-events-none">
               <svg
@@ -85,7 +112,7 @@ export default function FooterCTA({
               {isSubmitting ? 'Generating...' : 'Generate Wiki'}
             </button>
           </div>
-        </motion.form>
+        </form>
       </div>
     </section>
   );

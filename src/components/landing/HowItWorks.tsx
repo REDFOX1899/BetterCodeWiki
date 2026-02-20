@@ -1,7 +1,8 @@
 'use client';
 
-import React from 'react';
-import { motion } from 'framer-motion';
+import React, { useRef } from 'react';
+import { useGSAP } from '@gsap/react';
+import { gsap } from '@/lib/gsap';
 
 interface Step {
   number: string;
@@ -79,45 +80,109 @@ const steps: Step[] = [
   },
 ];
 
-const cardVariants = {
-  hidden: { opacity: 0, y: 30 },
-  visible: (i: number) => ({
-    opacity: 1,
-    y: 0,
-    transition: {
-      delay: i * 0.15,
-      duration: 0.5,
-      ease: 'easeOut' as const,
-    },
-  }),
-};
-
 export default function HowItWorks() {
+  const sectionRef = useRef<HTMLElement>(null);
+
+  useGSAP(
+    () => {
+      // Section header: timeline that fades in heading + subtitle with stagger
+      const headerTl = gsap.timeline({
+        scrollTrigger: {
+          trigger: '.hiw-header',
+          start: 'top 85%',
+          once: true,
+        },
+      });
+      headerTl.from('.hiw-header h2', {
+        opacity: 0,
+        y: 20,
+        duration: 0.5,
+        ease: 'power2.out',
+      });
+      headerTl.from(
+        '.hiw-header p',
+        {
+          opacity: 0,
+          y: 20,
+          duration: 0.5,
+          ease: 'power2.out',
+        },
+        '-=0.3'
+      );
+
+      // Step cards: staggered reveal from y:60
+      gsap.from('.hiw-card', {
+        scrollTrigger: {
+          trigger: '.hiw-cards-grid',
+          start: 'top 85%',
+          once: true,
+        },
+        opacity: 0,
+        y: 60,
+        duration: 0.6,
+        stagger: 0.15,
+        ease: 'power2.out',
+      });
+
+      // Number badges: scale from 0.5 to 1 with bounce
+      gsap.from('.hiw-badge', {
+        scrollTrigger: {
+          trigger: '.hiw-cards-grid',
+          start: 'top 85%',
+          once: true,
+        },
+        scale: 0.5,
+        duration: 0.6,
+        stagger: 0.15,
+        ease: 'back.out(1.7)',
+      });
+
+      // Connecting dashed line: animate stroke-dashoffset with scrub
+      const lineEl = document.querySelector(
+        '.hiw-connecting-line line'
+      ) as SVGLineElement | null;
+      if (lineEl) {
+        const lineLength = lineEl.getTotalLength?.()
+          ? lineEl.getTotalLength()
+          : 1000;
+        gsap.set(lineEl, {
+          strokeDasharray: lineLength,
+          strokeDashoffset: lineLength,
+        });
+        gsap.to(lineEl, {
+          strokeDashoffset: 0,
+          ease: 'none',
+          scrollTrigger: {
+            trigger: '.hiw-cards-grid',
+            start: 'top 85%',
+            end: 'bottom 50%',
+            scrub: 1,
+          },
+        });
+      }
+    },
+    { scope: sectionRef }
+  );
+
   return (
-    <section className="py-24 px-6">
+    <section ref={sectionRef} className="py-24 px-6">
       <div className="max-w-5xl mx-auto">
         {/* Section Header */}
-        <motion.div
-          className="text-center mb-16"
-          initial={{ opacity: 0, y: 20 }}
-          whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true }}
-          transition={{ duration: 0.5 }}
-        >
+        <div className="hiw-header text-center mb-16">
           <h2 className="text-display-sm text-foreground mb-4">
             Three Steps. Zero Configuration.
           </h2>
           <p className="text-body-lg text-muted-foreground max-w-xl mx-auto">
             From repository URL to full documentation in under a minute.
           </p>
-        </motion.div>
+        </div>
 
         {/* Steps Grid with Connecting Line */}
         <div className="relative">
           {/* Connecting line (visible on desktop) */}
           <div className="hidden md:block absolute top-24 left-[16.66%] right-[16.66%] h-px">
             <svg
-              className="w-full h-px overflow-visible"
+              className="hiw-connecting-line w-full h-px overflow-visible"
               preserveAspectRatio="none"
             >
               <line
@@ -133,20 +198,14 @@ export default function HowItWorks() {
             </svg>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-            {steps.map((step, i) => (
-              <motion.div
+          <div className="hiw-cards-grid grid grid-cols-1 md:grid-cols-3 gap-8">
+            {steps.map((step) => (
+              <div
                 key={step.number}
-                custom={i}
-                variants={cardVariants}
-                initial="hidden"
-                whileInView="visible"
-                viewport={{ once: true }}
-                whileHover={{ y: -4 }}
-                className="relative flex flex-col items-center text-center p-6 rounded-xl border border-border bg-card/50 backdrop-blur-sm transition-colors hover:border-primary/30"
+                className="hiw-card relative flex flex-col items-center text-center p-6 rounded-xl border border-border bg-card/50 backdrop-blur-sm transition-colors hover:border-primary/30 hover:-translate-y-1 transition-transform duration-200"
               >
                 {/* Number Badge */}
-                <div className="w-12 h-12 rounded-full bg-primary/10 border border-primary/20 flex items-center justify-center text-label-lg text-primary font-semibold mb-4">
+                <div className="hiw-badge w-12 h-12 rounded-full bg-primary/10 border border-primary/20 flex items-center justify-center text-label-lg text-primary font-semibold mb-4">
                   {step.number}
                 </div>
 
@@ -162,7 +221,7 @@ export default function HowItWorks() {
                 <p className="text-body-md text-muted-foreground">
                   {step.description}
                 </p>
-              </motion.div>
+              </div>
             ))}
           </div>
         </div>

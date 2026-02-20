@@ -1,7 +1,8 @@
 'use client';
 
-import React from 'react';
-import { motion } from 'framer-motion';
+import React, { useRef } from 'react';
+import { useGSAP } from '@gsap/react';
+import { gsap, ScrollTrigger } from '@/lib/gsap';
 
 interface Feature {
   title: string;
@@ -96,54 +97,102 @@ const features: Feature[] = [
   },
 ];
 
-const cardVariants = {
-  hidden: { opacity: 0, y: 24 },
-  visible: (i: number) => ({
-    opacity: 1,
-    y: 0,
-    transition: {
-      delay: i * 0.1,
-      duration: 0.5,
-      ease: 'easeOut' as const,
-    },
-  }),
-};
-
 export default function FeatureCards() {
+  const sectionRef = useRef<HTMLElement>(null);
+
+  useGSAP(
+    () => {
+      // Section header: fade-in
+      const headerTl = gsap.timeline({
+        scrollTrigger: {
+          trigger: '.fc-header',
+          start: 'top 85%',
+          once: true,
+        },
+      });
+      headerTl.from('.fc-header h2', {
+        opacity: 0,
+        y: 20,
+        duration: 0.5,
+        ease: 'power2.out',
+      });
+      headerTl.from(
+        '.fc-header p',
+        {
+          opacity: 0,
+          y: 20,
+          duration: 0.5,
+          ease: 'power2.out',
+        },
+        '-=0.3'
+      );
+
+      // Cards: alternating x positions (even from left, odd from right) with scrub: 0.5
+      const cards = gsap.utils.toArray<HTMLElement>('.fc-card');
+      cards.forEach((card, i) => {
+        const fromX = i % 2 === 0 ? -40 : 40;
+        gsap.from(card, {
+          scrollTrigger: {
+            trigger: card,
+            start: 'top 85%',
+            end: 'top 60%',
+            scrub: 0.5,
+          },
+          opacity: 0,
+          x: fromX,
+          ease: 'power2.out',
+        });
+      });
+
+      // Card icons: continuous pulse while in viewport
+      const icons = gsap.utils.toArray<HTMLElement>('.fc-card-icon');
+      icons.forEach((icon) => {
+        const pulseTween = gsap.to(icon, {
+          scale: 1.1,
+          duration: 0.8,
+          ease: 'power1.inOut',
+          repeat: -1,
+          yoyo: true,
+          paused: true,
+        });
+
+        ScrollTrigger.create({
+          trigger: icon,
+          start: 'top 90%',
+          end: 'bottom 10%',
+          toggleActions: 'play pause resume pause',
+          onEnter: () => pulseTween.play(),
+          onLeave: () => pulseTween.pause(),
+          onEnterBack: () => pulseTween.resume(),
+          onLeaveBack: () => pulseTween.pause(),
+        });
+      });
+    },
+    { scope: sectionRef }
+  );
+
   return (
-    <section className="py-24 px-6">
+    <section ref={sectionRef} className="py-24 px-6">
       <div className="max-w-5xl mx-auto">
         {/* Section Header */}
-        <motion.div
-          className="text-center mb-16"
-          initial={{ opacity: 0, y: 20 }}
-          whileInView={{ opacity: 1, y: 0 }}
-          viewport={{ once: true }}
-          transition={{ duration: 0.5 }}
-        >
+        <div className="fc-header text-center mb-16">
           <h2 className="text-display-sm text-foreground mb-4">
             Built for How Developers Actually Work
           </h2>
           <p className="text-body-lg text-muted-foreground max-w-xl mx-auto">
             Every feature is designed with real developer workflows in mind.
           </p>
-        </motion.div>
+        </div>
 
         {/* 2x2 Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {features.map((feature, i) => (
-            <motion.div
+          {features.map((feature) => (
+            <div
               key={feature.title}
-              custom={i}
-              variants={cardVariants}
-              initial="hidden"
-              whileInView="visible"
-              viewport={{ once: true }}
-              whileHover={{ y: -4 }}
-              className="border border-border bg-card/50 backdrop-blur-sm rounded-xl p-6 transition-colors hover:border-primary/50"
+              className="fc-card border border-border bg-card/50 backdrop-blur-sm rounded-xl p-6 transition-colors hover:border-primary/50 hover:-translate-y-1 transition-transform duration-200"
             >
               {/* Icon */}
-              <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center text-primary mb-4">
+              <div className="fc-card-icon w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center text-primary mb-4">
                 {feature.icon}
               </div>
 
@@ -154,7 +203,7 @@ export default function FeatureCards() {
               <p className="text-body-md text-muted-foreground">
                 {feature.description}
               </p>
-            </motion.div>
+            </div>
           ))}
         </div>
       </div>

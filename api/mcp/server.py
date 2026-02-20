@@ -414,6 +414,8 @@ if __name__ == "__main__":
         host = os.environ.get("MCP_HOST", "0.0.0.0")
         port = int(os.environ.get("MCP_PORT", "8008"))
         print(f"Starting BetterCodeWiki MCP server on http://{host}:{port}/mcp", file=sys.stderr)
-        mcp.run(transport="streamable-http", host=host, port=port)
+        mcp.settings.host = host
+        mcp.settings.port = port
+        mcp.run(transport="streamable-http")
     else:
         mcp.run(transport="stdio")

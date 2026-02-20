@@ -21,6 +21,9 @@ import FeatureCards from '@/components/landing/FeatureCards';
 import ComparisonTable from '@/components/landing/ComparisonTable';
 import CommunitySection from '@/components/landing/CommunitySection';
 import FooterCTA from '@/components/landing/FooterCTA';
+import SectionDivider from '@/components/landing/SectionDivider';
+import ScrollAnimationProvider from '@/components/landing/ScrollAnimationProvider';
+import FloatingElements from '@/components/landing/FloatingElements';
 
 // Dynamically import Hero3D to avoid SSR issues with Three.js
 const Hero3D = dynamic(() => import('@/components/landing/Hero3D'), { ssr: false });
@@ -416,6 +419,9 @@ export default function Home() {
 
   return (
     <div className="min-h-screen bg-background text-foreground">
+      {/* ===== Floating Decorative Elements (fixed background layer) ===== */}
+      <FloatingElements />
+
       {/* ===== Scroll-Aware Navigation Bar ===== */}
       <nav
         className={`sticky top-0 z-50 h-16 transition-all duration-300 ${
@@ -461,184 +467,194 @@ export default function Home() {
         </div>
       </nav>
 
-      {/* ===== Hero Section with 3D ===== */}
-      <Hero3D
-        value={repositoryInput}
-        onChange={handleRepositoryInputChange}
-        onSubmit={handleFormSubmit}
-        isSubmitting={isSubmitting}
-      />
+      <ScrollAnimationProvider>
+        {/* ===== Hero Section with 3D ===== */}
+        <Hero3D
+          value={repositoryInput}
+          onChange={handleRepositoryInputChange}
+          onSubmit={handleFormSubmit}
+          isSubmitting={isSubmitting}
+        />
 
-      {/* Error display for form validation */}
-      {error && (
-        <div className="max-w-2xl mx-auto px-6 -mt-8 mb-8">
-          <div className="text-destructive text-body-sm font-medium text-left bg-destructive/10 border border-destructive/20 rounded-lg px-4 py-3">
-            {error}
+        {/* Error display for form validation */}
+        {error && (
+          <div className="max-w-2xl mx-auto px-6 -mt-8 mb-8">
+            <div className="text-destructive text-body-sm font-medium text-left bg-destructive/10 border border-destructive/20 rounded-lg px-4 py-3">
+              {error}
+            </div>
           </div>
-        </div>
-      )}
+        )}
 
-      {/* ===== Configuration Modal ===== */}
-      <ConfigurationModal
-        isOpen={isConfigModalOpen}
-        onClose={() => setIsConfigModalOpen(false)}
-        repositoryInput={repositoryInput}
-        selectedLanguage={selectedLanguage}
-        setSelectedLanguage={setSelectedLanguage}
-        supportedLanguages={supportedLanguages}
-        isComprehensiveView={isComprehensiveView}
-        setIsComprehensiveView={setIsComprehensiveView}
-        provider={provider}
-        setProvider={setProvider}
-        model={model}
-        setModel={setModel}
-        isCustomModel={isCustomModel}
-        setIsCustomModel={setIsCustomModel}
-        customModel={customModel}
-        setCustomModel={setCustomModel}
-        selectedPlatform={selectedPlatform}
-        setSelectedPlatform={setSelectedPlatform}
-        accessToken={accessToken}
-        setAccessToken={setAccessToken}
-        excludedDirs={excludedDirs}
-        setExcludedDirs={setExcludedDirs}
-        excludedFiles={excludedFiles}
-        setExcludedFiles={setExcludedFiles}
-        includedDirs={includedDirs}
-        setIncludedDirs={setIncludedDirs}
-        includedFiles={includedFiles}
-        setIncludedFiles={setIncludedFiles}
-        onSubmit={handleGenerateWiki}
-        isSubmitting={isSubmitting}
-        authRequired={authRequired}
-        authCode={authCode}
-        setAuthCode={setAuthCode}
-        isAuthLoading={isAuthLoading}
-      />
+        {/* ===== Configuration Modal ===== */}
+        <ConfigurationModal
+          isOpen={isConfigModalOpen}
+          onClose={() => setIsConfigModalOpen(false)}
+          repositoryInput={repositoryInput}
+          selectedLanguage={selectedLanguage}
+          setSelectedLanguage={setSelectedLanguage}
+          supportedLanguages={supportedLanguages}
+          isComprehensiveView={isComprehensiveView}
+          setIsComprehensiveView={setIsComprehensiveView}
+          provider={provider}
+          setProvider={setProvider}
+          model={model}
+          setModel={setModel}
+          isCustomModel={isCustomModel}
+          setIsCustomModel={setIsCustomModel}
+          customModel={customModel}
+          setCustomModel={setCustomModel}
+          selectedPlatform={selectedPlatform}
+          setSelectedPlatform={setSelectedPlatform}
+          accessToken={accessToken}
+          setAccessToken={setAccessToken}
+          excludedDirs={excludedDirs}
+          setExcludedDirs={setExcludedDirs}
+          excludedFiles={excludedFiles}
+          setExcludedFiles={setExcludedFiles}
+          includedDirs={includedDirs}
+          setIncludedDirs={setIncludedDirs}
+          includedFiles={includedFiles}
+          setIncludedFiles={setIncludedFiles}
+          onSubmit={handleGenerateWiki}
+          isSubmitting={isSubmitting}
+          authRequired={authRequired}
+          authCode={authCode}
+          setAuthCode={setAuthCode}
+          isAuthLoading={isAuthLoading}
+        />
 
-      {/* ===== Processed Projects (if they exist) ===== */}
-      {!projectsLoading && projects.length > 0 && (
+        {/* ===== Processed Projects (if they exist) ===== */}
+        {!projectsLoading && projects.length > 0 && (
+          <section className="max-w-6xl mx-auto w-full px-6 py-12">
+            <div className="w-full space-y-8">
+              <div className="flex flex-col sm:flex-row items-center justify-between pb-6 border-b border-border">
+                <div className="flex items-center gap-3">
+                  <div className="bg-primary/10 p-2 rounded-full">
+                    <FaWikipediaW className="text-xl text-primary" />
+                  </div>
+                  <div>
+                    <h2 className="text-headline-md text-foreground">{t('projects.existingProjects')}</h2>
+                    <p className="text-muted-foreground text-body-sm">{t('projects.browseExisting')}</p>
+                  </div>
+                </div>
+              </div>
+
+              <ProcessedProjects
+                showHeader={false}
+                maxItems={9}
+                messages={messages}
+                className="w-full"
+              />
+            </div>
+          </section>
+        )}
+
+        {/* ===== Quick Start & Diagram Section ===== */}
         <section className="max-w-6xl mx-auto w-full px-6 py-12">
-          <div className="w-full space-y-8">
-            <div className="flex flex-col sm:flex-row items-center justify-between pb-6 border-b border-border">
-              <div className="flex items-center gap-3">
-                <div className="bg-primary/10 p-2 rounded-full">
-                  <FaWikipediaW className="text-xl text-primary" />
-                </div>
-                <div>
-                  <h2 className="text-headline-md text-foreground">{t('projects.existingProjects')}</h2>
-                  <p className="text-muted-foreground text-body-sm">{t('projects.browseExisting')}</p>
-                </div>
+          <div className="space-y-16">
+            {/* Quick Start Cards */}
+            <div className="bg-card rounded-xl border border-border p-8 elevation-1">
+              <h3 className="text-title-lg text-foreground mb-6 flex items-center gap-2">
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                </svg>
+                {t('home.quickStart')}
+              </h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                {[
+                  'https://github.com/REDFOX1899/BetterCodeWiki',
+                  'https://gitlab.com/gitlab-org/gitlab',
+                  'REDFOX1899/BetterCodeWiki',
+                  'https://bitbucket.org/atlassian/atlaskit'
+                ].map((url, index) => (
+                  <motion.button
+                    key={url}
+                    type="button"
+                    onClick={() => {
+                      setRepositoryInput(url);
+                      window.scrollTo({ top: 0, behavior: 'smooth' });
+                    }}
+                    className="px-4 py-3 bg-muted/50 rounded-lg border border-border/50 text-body-sm font-mono text-muted-foreground overflow-x-auto whitespace-nowrap hover:border-primary/50 hover:bg-primary/5 hover:text-foreground transition-all cursor-pointer text-left"
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.4, delay: index * 0.05, ease: "easeOut" }}
+                    whileHover={{ y: -4, transition: { duration: 0.2 } }}
+                  >
+                    {url}
+                  </motion.button>
+                ))}
               </div>
             </div>
 
-            <ProcessedProjects
-              showHeader={false}
-              maxItems={9}
-              messages={messages}
-              className="w-full"
-            />
+            {/* Interaction Diagrams */}
+            <div className="space-y-6">
+              <div className="flex items-center gap-2 mb-4">
+                <h3 className="text-headline-sm text-foreground">{t('home.advancedVisualization')}</h3>
+              </div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <div className="bg-card rounded-xl border border-border p-5 elevation-1">
+                  <h4 className="text-label-lg text-muted-foreground mb-4">{t('home.flowDiagram')}</h4>
+                  <div className="overflow-hidden rounded-lg bg-background/50 border border-border/50">
+                    <Mermaid chart={DEMO_FLOW_CHART} />
+                  </div>
+                </div>
+                <div className="bg-card rounded-xl border border-border p-5 elevation-1">
+                  <h4 className="text-label-lg text-muted-foreground mb-4">{t('home.sequenceDiagram')}</h4>
+                  <div className="overflow-hidden rounded-lg bg-background/50 border border-border/50">
+                    <Mermaid chart={DEMO_SEQUENCE_CHART} />
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
         </section>
-      )}
 
-      {/* ===== Quick Start & Diagram Section ===== */}
-      <section className="max-w-6xl mx-auto w-full px-6 py-12">
-        <div className="space-y-16">
-          {/* Quick Start Cards */}
-          <div className="bg-card rounded-xl border border-border p-8 elevation-1">
-            <h3 className="text-title-lg text-foreground mb-6 flex items-center gap-2">
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-              </svg>
-              {t('home.quickStart')}
-            </h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              {[
-                'https://github.com/REDFOX1899/BetterCodeWiki',
-                'https://gitlab.com/gitlab-org/gitlab',
-                'REDFOX1899/BetterCodeWiki',
-                'https://bitbucket.org/atlassian/atlaskit'
-              ].map((url, index) => (
-                <motion.button
-                  key={url}
-                  type="button"
-                  onClick={() => {
-                    setRepositoryInput(url);
-                    window.scrollTo({ top: 0, behavior: 'smooth' });
-                  }}
-                  className="px-4 py-3 bg-muted/50 rounded-lg border border-border/50 text-body-sm font-mono text-muted-foreground overflow-x-auto whitespace-nowrap hover:border-primary/50 hover:bg-primary/5 hover:text-foreground transition-all cursor-pointer text-left"
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.4, delay: index * 0.05, ease: "easeOut" }}
-                  whileHover={{ y: -4, transition: { duration: 0.2 } }}
-                >
-                  {url}
-                </motion.button>
-              ))}
-            </div>
-          </div>
+        <SectionDivider variant="gradient-orb" direction="right" />
 
-          {/* Interaction Diagrams */}
-          <div className="space-y-6">
-            <div className="flex items-center gap-2 mb-4">
-              <h3 className="text-headline-sm text-foreground">{t('home.advancedVisualization')}</h3>
-            </div>
+        {/* ===== How It Works ===== */}
+        <HowItWorks />
 
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              <div className="bg-card rounded-xl border border-border p-5 elevation-1">
-                <h4 className="text-label-lg text-muted-foreground mb-4">{t('home.flowDiagram')}</h4>
-                <div className="overflow-hidden rounded-lg bg-background/50 border border-border/50">
-                  <Mermaid chart={DEMO_FLOW_CHART} />
-                </div>
-              </div>
-              <div className="bg-card rounded-xl border border-border p-5 elevation-1">
-                <h4 className="text-label-lg text-muted-foreground mb-4">{t('home.sequenceDiagram')}</h4>
-                <div className="overflow-hidden rounded-lg bg-background/50 border border-border/50">
-                  <Mermaid chart={DEMO_SEQUENCE_CHART} />
-                </div>
+        <SectionDivider variant="grid-fade" />
+
+        {/* ===== Feature Cards ===== */}
+        <FeatureCards />
+
+        <SectionDivider variant="gradient-orb" direction="left" />
+
+        {/* ===== Comparison Table ===== */}
+        <ComparisonTable />
+
+        <SectionDivider variant="dots" direction="center" />
+
+        {/* ===== Community / Open Source ===== */}
+        <CommunitySection stars={0} contributors={0} forks={0} />
+
+        {/* ===== Footer CTA ===== */}
+        <FooterCTA
+          value={repositoryInput}
+          onChange={handleRepositoryInputChange}
+          onSubmit={handleFormSubmit}
+          isSubmitting={isSubmitting}
+        />
+
+        {/* ===== Footer ===== */}
+        <footer className="max-w-6xl mx-auto py-8 border-t border-border w-full px-6">
+          <div className="flex flex-col sm:flex-row justify-between items-center gap-4 text-sm text-muted-foreground">
+            <p>{t('footer.copyright')}</p>
+            <div className="flex items-center gap-6">
+              <div className="flex items-center space-x-5">
+                <a href="https://github.com/REDFOX1899/BetterCodeWiki" target="_blank" rel="noopener noreferrer" className="hover:text-foreground transition-colors">
+                  <FaGithub className="text-lg" />
+                </a>
+                <a href="https://github.com/REDFOX1899/BetterCodeWiki" target="_blank" rel="noopener noreferrer" className="hover:text-foreground transition-colors">
+                  <FaTwitter className="text-lg" />
+                </a>
               </div>
             </div>
           </div>
-        </div>
-      </section>
-
-      {/* ===== How It Works ===== */}
-      <HowItWorks />
-
-      {/* ===== Feature Cards ===== */}
-      <FeatureCards />
-
-      {/* ===== Comparison Table ===== */}
-      <ComparisonTable />
-
-      {/* ===== Community / Open Source ===== */}
-      <CommunitySection stars={0} contributors={0} forks={0} />
-
-      {/* ===== Footer CTA ===== */}
-      <FooterCTA
-        value={repositoryInput}
-        onChange={handleRepositoryInputChange}
-        onSubmit={handleFormSubmit}
-        isSubmitting={isSubmitting}
-      />
-
-      {/* ===== Footer ===== */}
-      <footer className="max-w-6xl mx-auto py-8 border-t border-border w-full px-6">
-        <div className="flex flex-col sm:flex-row justify-between items-center gap-4 text-sm text-muted-foreground">
-          <p>{t('footer.copyright')}</p>
-          <div className="flex items-center gap-6">
-            <div className="flex items-center space-x-5">
-              <a href="https://github.com/REDFOX1899/BetterCodeWiki" target="_blank" rel="noopener noreferrer" className="hover:text-foreground transition-colors">
-                <FaGithub className="text-lg" />
-              </a>
-              <a href="https://github.com/REDFOX1899/BetterCodeWiki" target="_blank" rel="noopener noreferrer" className="hover:text-foreground transition-colors">
-                <FaTwitter className="text-lg" />
-              </a>
-            </div>
-          </div>
-        </div>
-      </footer>
+        </footer>
+      </ScrollAnimationProvider>
     </div>
   );
 }
