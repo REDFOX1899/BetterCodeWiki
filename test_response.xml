@@ -1,0 +1,367 @@
+<wiki_structure>
+  <title>x CLI Documentation Website Wiki</title>
+  <description>A comprehensive wiki for the x CLI documentation website, covering project overview, development, deployment, and marketing strategies for the x CLI tool.</description>
+  <sections>
+    <section id="section-1">
+      <title>Introduction</title>
+      <pages>
+        <page_ref>page-1</page_ref>
+        <page_ref>page-2</page_ref>
+        <page_ref>page-3</page_ref>
+      </pages>
+    </section>
+    <section id="section-2">
+      <title>x CLI Core Concepts & Features</title>
+      <pages>
+        <page_ref>page-4</page_ref>
+        <page_ref>page-5</page_ref>
+        <page_ref>page-6</page_ref>
+        <page_ref>page-7</page_ref>
+        <page_ref>page-8</page_ref>
+        <page_ref>page-9</page_ref>
+        <page_ref>page-10</page_ref>
+        <page_ref>page-11</page_ref>
+      </pages>
+    </section>
+    <section id="section-3">
+      <title>Getting Started with x CLI</title>
+      <pages>
+        <page_ref>page-12</page_ref>
+        <page_ref>page-13</page_ref>
+      </pages>
+    </section>
+    <section id="section-4">
+      <title>Website Development Guide</title>
+      <pages>
+        <page_ref>page-14</page_ref>
+        <page_ref>page-15</page_ref>
+        <page_ref>page-16</page_ref>
+        <page_ref>page-17</page_ref>
+      </pages>
+    </section>
+    <section id="section-5">
+      <title>Website Deployment</title>
+      <pages>
+        <page_ref>page-18</page_ref>
+        <page_ref>page-19</page_ref>
+        <page_ref>page-20</page_ref>
+        <page_ref>page-21</page_ref>
+        <page_ref>page-22</page_ref>
+        <page_ref>page-23</page_ref>
+      </pages>
+    </section>
+    <section id="section-6">
+      <title>x CLI Architecture & Building</title>
+      <pages>
+        <page_ref>page-24</page_ref>
+        <page_ref>page-25</page_ref>
+      </pages>
+    </section>
+    <section id="section-7">
+      <title>Marketing & Promotion</title>
+      <pages>
+        <page_ref>page-26</page_ref>
+        <page_ref>page-27</page_ref>
+        <page_ref>page-28</page_ref>
+        <page_ref>page-29</page_ref>
+      </pages>
+    </section>
+  </sections>
+  <pages>
+    <page id="page-1">
+      <title>Project Overview</title>
+      <description>Introduction to the x CLI documentation website, its purpose, and the associated x CLI tool.</description>
+      <importance>high</importance>
+      <relevant_files>
+        <file_path>README.md</file_path>
+        <file_path>src/app/page.tsx</file_path>
+      </relevant_files>
+      <parent_section>section-1</parent_section>
+    </page>
+    <page id="page-2">
+      <title>Website Tech Stack</title>
+      <description>Details about the technologies used to build the documentation website, including Next.js, Tailwind CSS, and TypeScript.</description>
+      <importance>high</importance>
+      <relevant_files>
+        <file_path>README.md</file_path>
+        <file_path>package.json</file_path>
+        <file_path>tailwind.config.ts</file_path>
+        <file_path>src/app/layout.tsx</file_path>
+      </relevant_files>
+      <parent_section>section-1</parent_section>
+    </page>
+    <page id="page-3">
+      <title>What is x CLI?</title>
+      <description>Explains the core functionality and purpose of the x CLI tool as a natural language shell command executor.</description>
+      <importance>high</importance>
+      <relevant_files>
+        <file_path>README.md</file_path>
+        <file_path>MARKETING.md</file_path>
+        <file_path>src/app/page.tsx</file_path>
+        <file_path>src/app/layout.tsx</file_path>
+      </relevant_files>
+      <parent_section>section-1</parent_section>
+    </page>
+    <page id="page-4">
+      <title>Features Overview</title>
+      <description>A high-level summary of the key features of x CLI, such as human-in-the-loop, dangerous pattern detection, and multi-AI provider support.</description>
+      <importance>high</importance>
+      <relevant_files>
+        <file_path>src/app/page.tsx</file_path>
+        <file_path>MARKETING.md</file_path>
+      </relevant_files>
+      <parent_section>section-2</parent_section>
+    </page>
+    <page id="page-5">
+      <title>Contextual Understanding</title>
+      <description>Describes how x CLI automatically gathers and utilizes context (e.g., current directory, git status, file content) to generate accurate and relevant commands.</description>
+      <importance>medium</importance>
+      <relevant_files>
+        <file_path>src/app/page.tsx</file_path>
+        <file_path>src/app/docs/context/page.tsx</file_path>
+      </relevant_files>
+      <parent_section>section-2</parent_section>
+    </page>
+    <page id="page-6">
+      <title>Git Integration</title>
+      <description>Details on how x CLI integrates with Git, understanding branches, staged changes, and commit history for intelligent Git commands.</description>
+      <importance>medium</importance>
+      <relevant_files>
+        <file_path>src/app/page.tsx</file_path>
+        <file_path>src/app/docs/cli/page.tsx</file_path>
+      </relevant_files>
+      <parent_section>section-2</parent_section>
+    </page>
+    <page id="page-7">
+      <title>File Context</title>
+      <description>Explains how x CLI reads and understands the content of specified files to generate commands relevant to their content.</description>
+      <importance>medium</importance>
+      <relevant_files>
+        <file_path>src/app/page.tsx</file_path>
+        <file_path>src/app/docs/context/page.tsx</file_path>
+      </relevant_files>
+      <parent_section>section-2</parent_section>
+    </page>
+    <page id="page-8">
+      <title>API Providers</title>
+      <description>Information about configuring and using different AI API providers (OpenAI, Anthropic, Google Gemini, Ollama) with x CLI.</description>
+      <importance>high</importance>
+      <relevant_files>
+        <file_path>src/app/page.tsx</file_path>
+        <file_path>src/app/docs/providers/page.tsx</file_path>
+        <file_path>MARKETING.md</file_path>
+      </relevant_files>
+      <parent_section>section-2</parent_section>
+    </page>
+    <page id="page-9">
+      <title>Safety Controls</title>
+      <description>Details on x CLI's built-in safety mechanisms, including human-in-the-loop confirmation and detection of 55+ dangerous shell patterns.</description>
+      <importance>high</importance>
+      <relevant_files>
+        <file_path>src/app/page.tsx</file_path>
+        <file_path>src/app/docs/safety/page.tsx</file_path>
+        <file_path>MARKETING.md</file_path>
+      </relevant_files>
+      <parent_section>section-2</parent_section>
+    </page>
+    <page id="page-10">
+      <title>Co-Learn Feature</title>
+      <description>Explains how the Co-Learn feature helps users understand the flags and components of generated shell commands.</description>
+      <importance>medium</importance>
+      <relevant_files>
+        <file_path>src/app/page.tsx</file_path>
+        <file_path>src/app/docs/colearn/page.tsx</file_path>
+        <file_path>MARKETING.md</file_path>
+      </relevant_files>
+      <parent_section>section-2</parent_section>
+    </page>
+    <page id="page-11">
+      <title>Command History</title>
+      <description>Overview of how x CLI manages and utilizes command history for enhanced user experience.</description>
+      <importance>low</importance>
+      <relevant_files>
+        <file_path>src/app/page.tsx</file_path>
+        <file_path>src/app/docs/cli/page.tsx</file_path>
+      </relevant_files>
+      <parent_section>section-2</parent_section>
+    </page>
+    <page id="page-12">
+      <title>Installation Guide</title>
+      <description>Step-by-step instructions for installing the x CLI tool, including both automated and manual methods.</description>
+      <importance>high</importance>
+      <relevant_files>
+        <file_path>src/app/page.tsx</file_path>
+        <file_path>src/app/docs/installation/page.tsx</file_path>
+        <file_path>MARKETING.md</file_path>
+      </relevant_files>
+      <parent_section>section-3</parent_section>
+    </page>
+    <page id="page-13">
+      <title>Quick Start</title>
+      <description>A guide to quickly get started using x CLI after installation, with example commands.</description>
+      <importance>high</importance>
+      <relevant_files>
+        <file_path>src/app/page.tsx</file_path>
+        <file_path>src/app/docs/quickstart/page.tsx</file_path>
+      </relevant_files>
+      <parent_section>section-3</parent_section>
+    </page>
+    <page id="page-14">
+      <title>Local Development Setup</title>
+      <description>Instructions for setting up and running the documentation website locally for development purposes.</description>
+      <importance>high</importance>
+      <relevant_files>
+        <file_path>README.md</file_path>
+        <file_path>package.json</file_path>
+      </relevant_files>
+      <parent_section>section-4</parent_section>
+    </page>
+    <page id="page-15">
+      <title>Project File Structure</title>
+      <description>Explanation of the repository's file and folder organization, highlighting key directories like `src/app` and `src/components`.</description>
+      <importance>medium</importance>
+      <relevant_files>
+        <file_path>src/app/</file_path>
+        <file_path>src/components/</file_path>
+      </relevant_files>
+      <parent_section>section-4</parent_section>
+    </page>
+    <page id="page-16">
+      <title>Website Components Overview</title>
+      <description>Details on key React components used in the website, such as Navbar, Footer, CodeBlock, and DocsSidebar.</description>
+      <importance>medium</importance>
+      <relevant_files>
+        <file_path>src/components/Navbar.tsx</file_path>
+        <file_path>src/components/Footer.tsx</file_path>
+        <file_path>src/components/CodeBlock.tsx</file_path>
+        <file_path>src/components/DocsSidebar.tsx</file_path>
+        <file_path>src/components/FeatureCard.tsx</file_path>
+      </relevant_files>
+      <parent_section>section-4</parent_section>
+    </page>
+    <page id="page-17">
+      <title>Styling with Tailwind CSS</title>
+      <description>Overview of how Tailwind CSS is configured and used for styling the Next.js documentation website.</description>
+      <importance>low</importance>
+      <relevant_files>
+        <file_path>tailwind.config.ts</file_path>
+        <file_path>src/app/globals.css</file_path>
+        <file_path>postcss.config.mjs</file_path>
+      </relevant_files>
+      <parent_section>section-4</parent_section>
+    </page>
+    <page id="page-18">
+      <title>Deployment Overview</title>
+      <description>General information about deploying the x CLI documentation website, including cost comparisons and recommended setups.</description>
+      <importance>high</importance>
+      <relevant_files>
+        <file_path>DEPLOYMENT.md</file_path>
+        <file_path>README.md</file_path>
+      </relevant_files>
+      <parent_section>section-5</parent_section>
+    </page>
+    <page id="page-19">
+      <title>GitHub Pages Deployment</title>
+      <description>Step-by-step instructions for deploying the website to GitHub Pages, including GitHub Actions configuration.</description>
+      <importance>high</importance>
+      <relevant_files>
+        <file_path>DEPLOYMENT.md</file_path>
+      </relevant_files>
+      <parent_section>section-5</parent_section>
+    </page>
+    <page id="page-20">
+      <title>Cloudflare Pages Deployment</title>
+      <description>Instructions for deploying the website to Cloudflare Pages, detailing build settings and benefits.</description>
+      <importance>high</importance>
+      <relevant_files>
+        <file_path>DEPLOYMENT.md</file_path>
+      </relevant_files>
+      <parent_section>section-5</parent_section>
+    </page>
+    <page id="page-21">
+      <title>Vercel Deployment</title>
+      <description>Instructions for deploying the website to Vercel, leveraging its auto-detection for Next.js projects.</description>
+      <importance>high</importance>
+      <relevant_files>
+        <file_path>DEPLOYMENT.md</file_path>
+        <file_path>README.md</file_path>
+      </relevant_files>
+      <parent_section>section-5</parent_section>
+    </page>
+    <page id="page-22">
+      <title>Netlify Deployment</title>
+      <description>Instructions for deploying the website to Netlify, including build and publish directory settings.</description>
+      <importance>high</importance>
+      <relevant_files>
+        <file_path>DEPLOYMENT.md</file_path>
+      </relevant_files>
+      <parent_section>section-5</parent_section>
+    </page>
+    <page id="page-23">
+      <title>Custom Domain Setup</title>
+      <description>Guide to configuring a custom domain for the deployed website across different hosting platforms and DNS providers like GoDaddy.</description>
+      <importance>high</importance>
+      <relevant_files>
+        <file_path>DEPLOYMENT.md</file_path>
+        <file_path>README.md</file_path>
+      </relevant_files>
+      <parent_section>section-5</parent_section>
+    </page>
+    <page id="page-24">
+      <title>x CLI System Design</title>
+      <description>Overview of the architectural design and components of the x CLI tool, potentially including how it interacts with LLMs and the shell.</description>
+      <importance>high</importance>
+      <relevant_files>
+        <file_path>src/app/docs/architecture/page.tsx</file_path>
+        <file_path>DEPLOYMENT.md</file_path>
+      </relevant_files>
+      <parent_section>section-6</parent_section>
+    </page>
+    <page id="page-25">
+      <title>Building x CLI from Source</title>
+      <description>Instructions for manually cloning and building the x CLI tool from its GitHub repository.</description>
+      <importance>medium</importance>
+      <relevant_files>
+        <file_path>src/app/docs/building/page.tsx</file_path>
+        <file_path>src/app/page.tsx</file_path>
+      </relevant_files>
+      <parent_section>section-6</parent_section>
+    </page>
+    <page id="page-26">
+      <title>Marketing Strategy for x CLI</title>
+      <description>An overview of the marketing plan for promoting the x CLI tool, including target audience, platforms, and content ideas.</description>
+      <importance>high</importance>
+      <relevant_files>
+        <file_path>MARKETING.md</file_path>
+      </relevant_files>
+      <parent_section>section-7</parent_section>
+    </page>
+    <page id="page-27">
+      <title>Target Audience Analysis</title>
+      <description>Defines the primary and secondary target audiences for x CLI, along with their pain points and motivations.</description>
+      <importance>medium</importance>
+      <relevant_files>
+        <file_path>MARKETING.md</file_path>
+      </relevant_files>
+      <parent_section>section-7</parent_section>
+    </page>
+    <page id="page-28">
+      <title>Promotion Platforms</title>
+      <description>Lists and describes various developer-focused platforms and directories for promoting x CLI, such as Product Hunt, Hacker News, and Reddit.</description>
+      <importance>medium</importance>
+      <relevant_files>
+        <file_path>MARKETING.md</file_path>
+      </relevant_files>
+      <parent_section>section-7</parent_section>
+    </page>
+    <page id="page-29">
+      <title>Social Media Strategy</title>
+      <description>Detailed plan for social media engagement on platforms like X (Twitter) and LinkedIn, including example posts and content types.</description>
+      <importance>medium</importance>
+      <relevant_files>
+        <file_path>MARKETING.md</file_path>
+      </relevant_files>
+      <parent_section>section-7</parent_section>
+    </page>
+  </pages>
+</wiki_structure>
