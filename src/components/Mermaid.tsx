@@ -865,28 +865,29 @@ const Mermaid: React.FC<MermaidProps> = ({ chart, className = '', zoomingEnabled
             title={zoomingEnabled ? undefined : "Click to view fullscreen"}
           />
 
-          {!zoomingEnabled && (
-            <div className="absolute top-3 right-3 bg-popover/90 backdrop-blur-sm text-popover-foreground px-3 py-2 rounded-md opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex items-center gap-2 text-xs font-medium shadow-lg border border-border pointer-events-none">
-              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <circle cx="11" cy="11" r="8"></circle>
-                <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
-                <line x1="11" y1="8" x2="11" y2="14"></line>
-                <line x1="8" y1="11" x2="14" y2="11"></line>
-              </svg>
-              <span>Click to expand</span>
-            </div>
-          )}
+          {/* Always-visible expand button for all diagrams */}
+          <button
+            onClick={handleDiagramClick}
+            className="absolute top-3 right-3 bg-popover/95 backdrop-blur-sm text-popover-foreground px-3 py-2 rounded-md flex items-center gap-2 text-xs font-medium shadow-lg border border-border hover:bg-accent hover:text-accent-foreground transition-all duration-200 cursor-pointer z-10"
+            aria-label="Expand diagram"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="15 3 21 3 21 9"></polyline>
+              <polyline points="9 21 3 21 3 15"></polyline>
+              <line x1="21" y1="3" x2="14" y2="10"></line>
+              <line x1="3" y1="21" x2="10" y2="14"></line>
+            </svg>
+            <span>Expand</span>
+          </button>
         </div>
       </div>
 
-      {!zoomingEnabled && (
-        <FullScreenModal
-          isOpen={isFullscreen}
-          onClose={() => setIsFullscreen(false)}
-        >
-          <div className="mermaid-diagram-container" dangerouslySetInnerHTML={{ __html: svg }} />
-        </FullScreenModal>
-      )}
+      <FullScreenModal
+        isOpen={isFullscreen}
+        onClose={() => setIsFullscreen(false)}
+      >
+        <div className="mermaid-diagram-container" dangerouslySetInnerHTML={{ __html: svg }} />
+      </FullScreenModal>
     </>
   );
 };
