@@ -1,6 +1,8 @@
-# BetterCodeWiki MCP Server — Plan & Setup Guide
+# BetterCodeWiki MCP Server — Setup Guide
 
-> How to expose BetterCodeWiki as an MCP server so Claude Desktop, Claude Code, Cursor, and Windsurf can query your codebase wikis in real-time.
+> Expose BetterCodeWiki as an MCP server so Claude Desktop, Claude Code, Cursor, and Windsurf can query your codebase wikis in real-time.
+>
+> **Status: Built and working.** Server is at `api/mcp/server.py`.
 
 ---
 
@@ -68,19 +70,20 @@ After analyzing what's actually useful for AI agents vs. what's noise, here are 
 
 ---
 
-## Implementation Plan
+## Implementation
 
 ### File Structure
 
 ```
 api/mcp/
-├── server.py          # MCP server entry point (standalone script)
-└── requirements.txt   # Just: mcp[cli]>=1.25
+├── server.py          # MCP server (standalone script, ~250 lines)
+├── .venv/             # Python 3.13 venv with mcp[cli] installed
+└── .gitignore         # Excludes .venv/ and __pycache__/
 ```
 
-That's it. One file + one dependency.
+One file. One dependency (`mcp[cli]`). Zero imports from existing code.
 
-### server.py — What It Will Look Like
+### server.py — Source
 
 ```python
 """
@@ -383,12 +386,15 @@ if __name__ == "__main__":
         mcp.run(transport="stdio")
 ```
 
-### What This Code Does
+See [`api/mcp/server.py`](api/mcp/server.py) for the full implementation.
+
+### How It Works
 
 1. **Reads `~/.adalflow/wikicache/` directly** — same JSON files the main app creates
 2. **No imports from existing code** — zero coupling, zero risk
 3. **All cached wiki tools are instant** — just file I/O and string search
-4. **`ask_codebase` returns context, not LLM output** — the calling agent's own model reasons about the wiki content (this is how MCP tools should work)
+4. **`ask_codebase` returns context, not LLM output** — the calling agent's own model reasons about the wiki content (this is the correct MCP pattern)
+5. **Large page content is truncated** in `ask_codebase` (8KB max per page) to keep responses manageable; use `get_wiki_page` for full content
 
 ---
 
@@ -396,22 +402,17 @@ if __name__ == "__main__":
 
 ### Prerequisites
 
-1. BetterCodeWiki must be running and have generated at least one wiki (so cache files exist in `~/.adalflow/wikicache/`)
+1. BetterCodeWiki must have generated at least one wiki (so cache files exist in `~/.adalflow/wikicache/`)
 2. Python 3.10+ installed locally
 
 ### Step 1: Install the MCP SDK
 
-```bash
-pip install "mcp[cli]"
-```
-
-Or if using a virtual environment:
+The venv is already set up at `api/mcp/.venv/`. To recreate it:
 
 ```bash
 cd /path/to/BetterCodeWiki
-python -m venv .mcp-venv
-source .mcp-venv/bin/activate
-pip install "mcp[cli]"
+python3.13 -m venv api/mcp/.venv
+api/mcp/.venv/bin/pip install "mcp[cli]"
 ```
 
 ### Step 2: Test the Server Locally
