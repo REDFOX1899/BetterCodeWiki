@@ -6,6 +6,7 @@ services:
     ports:
       - "${PORT:-8001}:${PORT:-8001}"  # API port
       - "3000:3000"  # Next.js port
+      - "8008:8008"  # MCP server port
     env_file:
       - .env
     environment:

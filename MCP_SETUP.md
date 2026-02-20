@@ -558,25 +558,35 @@ Expected: Claude calls `ask_codebase`, gets relevant wiki context, then reasons 
 
 ---
 
-## Docker Integration (Optional, Future)
+## Docker Integration
 
-If you want the MCP server to run inside the Docker container alongside the existing services, add to `start.sh`:
+The MCP server runs automatically inside the Docker container alongside FastAPI and Next.js.
 
+**What's configured:**
+- `mcp[cli]` is included in `api/pyproject.toml` as a Poetry dependency
+- `Dockerfile` exposes port 8008 and launches `python /app/api/mcp/server.py --http &` in `start.sh`
+- `docker-compose.yml` maps port 8008 to the host
+- The server binds to `0.0.0.0:8008` inside the container (configurable via `MCP_HOST` and `MCP_PORT` env vars)
+
+**Usage after `docker compose up`:**
+
+Remote MCP clients connect to `http://localhost:8008/mcp` (streamable-http transport).
+
+For Claude Code connecting to a Docker-hosted instance:
 ```bash
-# Start MCP server on port 8008 (HTTP mode for remote access)
-python api/mcp/server.py --http &
+claude mcp add bettercodewiki --transport streamable-http http://localhost:8008/mcp
 ```
 
-And expose port 8008 in `docker-compose.yml`:
-
-```yaml
-ports:
-  - "8008:8008"   # MCP server
-  - "8001:8001"   # FastAPI
-  - "3000:3000"   # Next.js
+For Claude Desktop, use the URL-based config:
+```json
+{
+  "mcpServers": {
+    "bettercodewiki": {
+      "url": "http://localhost:8008/mcp"
+    }
+  }
+}
 ```
-
-Remote clients would then connect to `http://localhost:8008/mcp`.
 
 ---
 

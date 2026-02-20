@@ -411,7 +411,9 @@ def wiki_page_resource(owner: str, repo: str, page_id: str) -> str:
 
 if __name__ == "__main__":
     if "--http" in sys.argv:
-        print("Starting BetterCodeWiki MCP server on http://127.0.0.1:8008/mcp", file=sys.stderr)
-        mcp.run(transport="streamable-http", host="127.0.0.1", port=8008)
+        host = os.environ.get("MCP_HOST", "0.0.0.0")
+        port = int(os.environ.get("MCP_PORT", "8008"))
+        print(f"Starting BetterCodeWiki MCP server on http://{host}:{port}/mcp", file=sys.stderr)
+        mcp.run(transport="streamable-http", host=host, port=port)
     else:
         mcp.run(transport="stdio")

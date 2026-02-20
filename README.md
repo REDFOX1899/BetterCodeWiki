@@ -26,6 +26,7 @@
 - **Export Options**: Export to Markdown, JSON, Notion, Confluence, and HTML formats
 - **Global Search**: Command palette (Cmd+K) for quick navigation
 - **Reading Mode**: Distraction-free reading with Alt+R toggle
+- **MCP Server**: Expose wiki data to AI agents (Claude Desktop, Claude Code, Cursor, Windsurf) via Model Context Protocol
 
 ## Quick Start
 
@@ -162,6 +163,8 @@ BetterCodeWiki/
 │   ├── api.py            # FastAPI implementation
 │   ├── rag.py            # Retrieval Augmented Generation
 │   ├── data_pipeline.py  # Data processing utilities
+│   ├── mcp/              # MCP server (standalone)
+│   │   └── server.py     # 5 tools for AI agent access to wikis
 │   ├── pyproject.toml    # Python dependencies (Poetry)
 │   └── poetry.lock       # Locked Python dependency versions
 │
@@ -208,7 +211,7 @@ BetterCodeWiki/
 # Pull and run
 docker pull ghcr.io/asyncfuncai/deepwiki-open:latest
 
-docker run -p 8001:8001 -p 3000:3000 \
+docker run -p 8001:8001 -p 3000:3000 -p 8008:8008 \
   -e GOOGLE_API_KEY=your_key \
   -e OPENAI_API_KEY=your_key \
   -v ~/.adalflow:/root/.adalflow \
@@ -220,6 +223,81 @@ Or use Docker Compose:
 ```bash
 docker-compose up
 ```
+
+### Ports
+
+| Port | Service |
+|------|---------|
+| 3000 | Next.js frontend |
+| 8001 | FastAPI backend |
+| 8008 | MCP server (streamable-http) |
+
+## MCP Server — AI Agent Integration
+
+BetterCodeWiki includes a built-in [MCP (Model Context Protocol)](https://modelcontextprotocol.io/) server that lets AI coding agents query your wiki documentation in real-time.
+
+### What It Does
+
+Any MCP-compatible client (Claude Desktop, Claude Code, Cursor, Windsurf) can:
+- Discover which repos have generated wikis
+- Look up architecture overviews and specific wiki pages
+- Search documentation for relevant context
+- Ask questions about a codebase using wiki content
+
+### 5 MCP Tools
+
+| Tool | Description |
+|------|-------------|
+| `list_projects` | Discover all cached wiki repos |
+| `get_wiki_overview` | Get project architecture in one call |
+| `get_wiki_page` | Fetch a specific page by title (fuzzy match) or ID |
+| `search_wiki` | Full-text search across all wiki pages |
+| `ask_codebase` | Get relevant wiki context for a question |
+
+### Connect via Docker (HTTP)
+
+When running with Docker, the MCP server is available at `http://localhost:8008/mcp`.
+
+**Claude Code:**
+```bash
+claude mcp add bettercodewiki --transport streamable-http http://localhost:8008/mcp
+```
+
+**Claude Desktop** (`~/Library/Application Support/Claude/claude_desktop_config.json`):
+```json
+{
+  "mcpServers": {
+    "bettercodewiki": {
+      "url": "http://localhost:8008/mcp"
+    }
+  }
+}
+```
+
+### Connect Locally (stdio — no Docker needed)
+
+```bash
+# Set up the venv once
+python3 -m venv api/mcp/.venv
+api/mcp/.venv/bin/pip install "mcp[cli]"
+
+# Register with Claude Code
+claude mcp add bettercodewiki -- api/mcp/.venv/bin/python api/mcp/server.py
+```
+
+**Claude Desktop** (stdio mode):
+```json
+{
+  "mcpServers": {
+    "bettercodewiki": {
+      "command": "/absolute/path/to/BetterCodeWiki/api/mcp/.venv/bin/python",
+      "args": ["/absolute/path/to/BetterCodeWiki/api/mcp/server.py"]
+    }
+  }
+}
+```
+
+For full setup details, see [MCP_SETUP.md](MCP_SETUP.md).
 
 ## Ask & DeepResearch
 
