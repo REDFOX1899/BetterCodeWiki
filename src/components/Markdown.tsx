@@ -4,6 +4,7 @@ import remarkGfm from 'remark-gfm';
 import rehypeRaw from 'rehype-raw';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { tomorrow } from 'react-syntax-highlighter/dist/cjs/styles/prism';
+import { useParams } from 'next/navigation';
 import Mermaid from './Mermaid';
 import { slugify } from './TableOfContents';
 import type { DiagramData } from '../types/diagramData';
@@ -78,6 +79,12 @@ const CopyButton: React.FC<{ text: string }> = ({ text }) => {
 };
 
 const Markdown: React.FC<MarkdownProps> = ({ content, onDiagramNodeClick }) => {
+  // Get owner/repo from route params for explorer URL
+  const params = useParams();
+  const owner = typeof params?.owner === 'string' ? params.owner : '';
+  const repo = typeof params?.repo === 'string' ? params.repo : '';
+  const explorerUrl = owner && repo ? `/${owner}/${repo}/explore` : undefined;
+
   // Extract and strip diagram data markers from content
   const { cleanContent, diagramDataMap } = useMemo(() => extractDiagramData(content), [content]);
 
@@ -214,6 +221,7 @@ const Markdown: React.FC<MarkdownProps> = ({ content, onDiagramNodeClick }) => {
               zoomingEnabled={true}
               diagramData={matchedData}
               onNodeClick={handleNodeClick}
+              explorerUrl={matchedData ? explorerUrl : undefined}
             />
           </div>
         );

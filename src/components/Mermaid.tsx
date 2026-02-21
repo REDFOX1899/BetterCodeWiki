@@ -579,6 +579,7 @@ interface MermaidProps {
   zoomingEnabled?: boolean;
   diagramData?: import('../types/diagramData').DiagramData;
   onNodeClick?: (nodeId: string, label: string, rect: DOMRect) => void;
+  explorerUrl?: string;
 }
 
 /**
@@ -829,7 +830,7 @@ const FullScreenModal: React.FC<{
 };
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
-const Mermaid: React.FC<MermaidProps> = ({ chart, className = '', zoomingEnabled = false, diagramData, onNodeClick }) => {
+const Mermaid: React.FC<MermaidProps> = ({ chart, className = '', zoomingEnabled = false, diagramData, onNodeClick, explorerUrl }) => {
   const [svg, setSvg] = useState<string>('');
   const [error, setError] = useState<string | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -1054,20 +1055,38 @@ const Mermaid: React.FC<MermaidProps> = ({ chart, className = '', zoomingEnabled
             title={zoomingEnabled ? undefined : "Click to view fullscreen"}
           />
 
-          {/* Always-visible expand button for all diagrams */}
-          <button
-            onClick={handleDiagramClick}
-            className="absolute top-3 right-3 bg-popover/95 backdrop-blur-sm text-popover-foreground px-3 py-2 rounded-md flex items-center gap-2 text-xs font-medium shadow-lg border border-border hover:bg-accent hover:text-accent-foreground transition-all duration-200 cursor-pointer z-10"
-            aria-label="Expand diagram"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <polyline points="15 3 21 3 21 9"></polyline>
-              <polyline points="9 21 3 21 3 15"></polyline>
-              <line x1="21" y1="3" x2="14" y2="10"></line>
-              <line x1="3" y1="21" x2="10" y2="14"></line>
-            </svg>
-            <span>Expand</span>
-          </button>
+          {/* Always-visible action buttons for all diagrams */}
+          <div className="absolute top-3 right-3 flex items-center gap-1.5 z-10">
+            {explorerUrl && diagramData && (
+              <a
+                href={explorerUrl}
+                className="bg-popover/95 backdrop-blur-sm text-popover-foreground px-3 py-2 rounded-md flex items-center gap-2 text-xs font-medium shadow-lg border border-border hover:bg-accent hover:text-accent-foreground transition-all duration-200 cursor-pointer"
+                title="Open in Explorer"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <circle cx="6" cy="6" r="3"></circle>
+                  <circle cx="18" cy="6" r="3"></circle>
+                  <circle cx="12" cy="18" r="3"></circle>
+                  <line x1="8.5" y1="7.5" x2="10.5" y2="16"></line>
+                  <line x1="15.5" y1="7.5" x2="13.5" y2="16"></line>
+                </svg>
+                <span>Explorer</span>
+              </a>
+            )}
+            <button
+              onClick={handleDiagramClick}
+              className="bg-popover/95 backdrop-blur-sm text-popover-foreground px-3 py-2 rounded-md flex items-center gap-2 text-xs font-medium shadow-lg border border-border hover:bg-accent hover:text-accent-foreground transition-all duration-200 cursor-pointer"
+              aria-label="Expand diagram"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="15 3 21 3 21 9"></polyline>
+                <polyline points="9 21 3 21 3 15"></polyline>
+                <line x1="21" y1="3" x2="14" y2="10"></line>
+                <line x1="3" y1="21" x2="10" y2="14"></line>
+              </svg>
+              <span>Expand</span>
+            </button>
+          </div>
         </div>
       </div>
 
