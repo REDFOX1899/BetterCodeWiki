@@ -1,7 +1,60 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
-import mermaid from 'mermaid';
 import { injectTechLogos } from '@/lib/mermaidLogoInjector';
-// We'll use dynamic import for svg-pan-zoom
+// We'll use dynamic import for svg-pan-zoom and mermaid (lazy-loaded)
+
+// ============================================================
+// Lazy-load mermaid library (avoids bundling ~64MB into initial chunk)
+// ============================================================
+let mermaidInstance: typeof import('mermaid').default | null = null;
+let mermaidLoadPromise: Promise<typeof import('mermaid').default> | null = null;
+
+async function getMermaid() {
+  if (mermaidInstance) return mermaidInstance;
+  if (!mermaidLoadPromise) {
+    mermaidLoadPromise = import('mermaid').then(m => {
+      mermaidInstance = m.default;
+      return mermaidInstance;
+    });
+  }
+  return mermaidLoadPromise;
+}
+
+// ============================================================
+// Shared MutationObserver for theme changes
+// Prevents N observers for N diagram instances on a single page
+// ============================================================
+type ThemeListener = () => void;
+const themeListeners = new Set<ThemeListener>();
+let sharedObserver: MutationObserver | null = null;
+
+function subscribeToThemeChanges(listener: ThemeListener): () => void {
+  themeListeners.add(listener);
+
+  if (!sharedObserver && typeof document !== 'undefined') {
+    let debounceTimer: ReturnType<typeof setTimeout>;
+    sharedObserver = new MutationObserver((mutations) => {
+      for (const mutation of mutations) {
+        if (mutation.type === 'attributes' &&
+            (mutation.attributeName === 'class' || mutation.attributeName === 'data-theme')) {
+          clearTimeout(debounceTimer);
+          debounceTimer = setTimeout(() => {
+            themeListeners.forEach(l => l());
+          }, 100); // debounce 100ms
+          break;
+        }
+      }
+    });
+    sharedObserver.observe(document.documentElement, { attributes: true });
+  }
+
+  return () => {
+    themeListeners.delete(listener);
+    if (themeListeners.size === 0 && sharedObserver) {
+      sharedObserver.disconnect();
+      sharedObserver = null;
+    }
+  };
+}
 
 // Calming color palettes for diagrams — enhanced with multi-color node palette
 const LIGHT_THEME = {
@@ -104,7 +157,8 @@ function isDarkMode(): boolean {
   return el.classList.contains('dark') || el.getAttribute('data-theme') === 'dark';
 }
 
-function initializeMermaid(dark: boolean) {
+async function initializeMermaid(dark: boolean) {
+  const mermaid = await getMermaid();
   const vars = dark ? DARK_THEME : LIGHT_THEME;
   mermaid.initialize({
     startOnLoad: false,
@@ -531,16 +585,18 @@ function initializeMermaid(dark: boolean) {
 // Track which theme was last initialized to avoid redundant calls
 let lastInitializedTheme: boolean | null = null;
 
-function ensureMermaidInitialized(dark: boolean) {
+async function ensureMermaidInitialized(dark: boolean) {
   if (lastInitializedTheme !== dark) {
-    initializeMermaid(dark);
+    await initializeMermaid(dark);
     lastInitializedTheme = dark;
   }
 }
 
 // Initialize with current theme (deferred to avoid SSR issues)
+// Note: this is now async but fire-and-forget at module level — the first
+// render that calls ensureMermaidInitialized will await the same promise.
 if (typeof document !== 'undefined') {
-  ensureMermaidInitialized(isDarkMode());
+  void ensureMermaidInitialized(isDarkMode());
 }
 
 /**
@@ -892,27 +948,41 @@ const Mermaid: React.FC<MermaidProps> = ({ chart, className = '', zoomingEnabled
   const [error, setError] = useState<string | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [themeKey, setThemeKey] = useState(0); // forces re-render on theme change
+  const [isInView, setIsInView] = useState(false); // viewport-based lazy rendering
   const containerRef = useRef<HTMLDivElement>(null);
+  const outerRef = useRef<HTMLDivElement>(null); // for IntersectionObserver
   const idRef = useRef(`mermaid-${++mermaidIdCounter}-${Math.random().toString(36).substring(2, 9)}`);
   const mouseDownPosRef = useRef<{ x: number; y: number } | null>(null);
   const selectedNodeRef = useRef<string | null>(null);
 
-  // Watch for theme changes (next-themes adds/removes .dark class or data-theme attr on <html>)
+  // Viewport-based lazy rendering — only render when diagram scrolls into view
   useEffect(() => {
-    const observer = new MutationObserver(() => {
+    if (!outerRef.current) return;
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) {
+          setIsInView(true);
+          observer.disconnect();
+        }
+      },
+      { rootMargin: '200px' } // start loading 200px before visible
+    );
+    observer.observe(outerRef.current);
+    return () => observer.disconnect();
+  }, []);
+
+  // Watch for theme changes via shared observer (one MutationObserver for all instances)
+  useEffect(() => {
+    const unsubscribe = subscribeToThemeChanges(() => {
       const dark = isDarkMode();
       // Force re-initialization on theme change by resetting tracker
       lastInitializedTheme = null;
-      ensureMermaidInitialized(dark);
+      void ensureMermaidInitialized(dark);
       // Generate a new unique ID for re-render (mermaid caches by ID)
       idRef.current = `mermaid-${++mermaidIdCounter}-${Math.random().toString(36).substring(2, 9)}`;
       setThemeKey(k => k + 1);
     });
-    observer.observe(document.documentElement, {
-      attributes: true,
-      attributeFilter: ['class', 'data-theme'],
-    });
-    return () => observer.disconnect();
+    return unsubscribe;
   }, []);
 
   // Inject tech stack logos and annotate nodes after SVG is rendered in the DOM
@@ -993,12 +1063,13 @@ const Mermaid: React.FC<MermaidProps> = ({ chart, className = '', zoomingEnabled
 
     // Ensure mermaid is initialized with current theme before render
     const dark = isDarkMode();
-    ensureMermaidInitialized(dark);
+    await ensureMermaidInitialized(dark);
 
     try {
       setError(null);
       setSvg('');
 
+      const mermaid = await getMermaid();
       const { svg: renderedSvg } = await mermaid.render(idRef.current, sanitized);
 
       if (!isMountedRef.current) return;
@@ -1015,11 +1086,13 @@ const Mermaid: React.FC<MermaidProps> = ({ chart, className = '', zoomingEnabled
     }
   }, [chart]);
 
+  // Only render when the diagram is in the viewport (lazy rendering)
   useEffect(() => {
+    if (!isInView) return;
     const isMountedRef = { current: true };
     renderChart(isMountedRef);
     return () => { isMountedRef.current = false; };
-  }, [chart, themeKey, renderChart]);
+  }, [chart, themeKey, renderChart, isInView]);
 
   const handleDiagramClick = () => {
     if (!error && svg) {
@@ -1040,7 +1113,7 @@ const Mermaid: React.FC<MermaidProps> = ({ chart, className = '', zoomingEnabled
   if (error) {
     // `error` now holds the sanitized mermaid source for display
     return (
-      <div className={`border border-destructive/30 rounded-md p-4 bg-destructive/5 ${className}`}>
+      <div ref={outerRef} className={`border border-destructive/30 rounded-md p-4 bg-destructive/5 ${className}`}>
         <div className="flex items-center justify-between mb-3">
           <div className="text-destructive text-sm font-medium flex items-center">
             <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-2 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -1068,12 +1141,14 @@ const Mermaid: React.FC<MermaidProps> = ({ chart, className = '', zoomingEnabled
 
   if (!svg) {
     return (
-      <div className={`flex justify-center items-center p-6 min-h-[200px] bg-muted/10 rounded-lg border border-border/50 ${className}`}>
+      <div ref={outerRef} className={`flex justify-center items-center p-6 min-h-[200px] bg-muted/10 rounded-lg border border-border/50 ${className}`}>
         <div className="flex items-center space-x-2">
           <div className="w-2 h-2 bg-primary/70 rounded-full animate-pulse"></div>
           <div className="w-2 h-2 bg-primary/70 rounded-full animate-pulse delay-75"></div>
           <div className="w-2 h-2 bg-primary/70 rounded-full animate-pulse delay-150"></div>
-          <span className="text-muted-foreground text-xs ml-2 font-medium">Rendering diagram...</span>
+          <span className="text-muted-foreground text-xs ml-2 font-medium">
+            {isInView ? 'Rendering diagram...' : 'Waiting to render...'}
+          </span>
         </div>
       </div>
     );
@@ -1082,7 +1157,11 @@ const Mermaid: React.FC<MermaidProps> = ({ chart, className = '', zoomingEnabled
   return (
     <>
       <div
-        ref={containerRef}
+        ref={(node) => {
+          // Combine outerRef and containerRef on the same element
+          (outerRef as React.MutableRefObject<HTMLDivElement | null>).current = node;
+          (containerRef as React.MutableRefObject<HTMLDivElement | null>).current = node;
+        }}
         className={`w-full max-w-full ${zoomingEnabled ? "min-h-[500px] h-[700px] p-4" : ""}`}
       >
         <div
