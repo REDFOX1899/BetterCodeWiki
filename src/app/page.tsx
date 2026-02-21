@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import dynamic from 'next/dynamic';
@@ -92,7 +92,7 @@ export default function Home() {
 
   const [repositoryInput, setRepositoryInput] = useState('https://github.com/REDFOX1899/BetterCodeWiki');
 
-  const REPO_CONFIG_CACHE_KEY = 'deepwikiRepoConfigCache';
+  const REPO_CONFIG_CACHE_KEY = 'bettercodewikiRepoConfigCache';
 
   const loadConfigFromCache = (repoUrl: string) => {
     if (!repoUrl) return;
@@ -120,15 +120,35 @@ export default function Home() {
     }
   };
 
+  const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   const handleRepositoryInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const newRepoUrl = e.target.value;
     setRepositoryInput(newRepoUrl);
+
+    // Clear any pending debounce timer
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
+    }
+
     if (newRepoUrl.trim() === "") {
       // Optionally reset fields if input is cleared
     } else {
-      loadConfigFromCache(newRepoUrl);
+      // Debounce the config lookup so it only fires after 300ms of inactivity
+      debounceTimerRef.current = setTimeout(() => {
+        loadConfigFromCache(newRepoUrl);
+      }, 300);
     }
   };
+
+  // Clear the debounce timer on unmount
+  useEffect(() => {
+    return () => {
+      if (debounceTimerRef.current) {
+        clearTimeout(debounceTimerRef.current);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     if (repositoryInput) {
@@ -370,10 +390,10 @@ export default function Home() {
 
     const { owner, repo, type, localPath } = parsedRepo;
 
-    // Store tokens in query params if they exist
+    // Store token securely in sessionStorage (not in URL)
     const params = new URLSearchParams();
-    if (accessToken) {
-      params.append('token', accessToken);
+    if (accessToken && typeof window !== 'undefined') {
+      sessionStorage.setItem('bcw_access_token', accessToken);
     }
     // Always include the type parameter
     params.append('type', (type == 'local' ? type : selectedPlatform) || 'github');
@@ -418,7 +438,7 @@ export default function Home() {
   };
 
   return (
-    <div className="min-h-screen bg-background text-foreground">
+    <div id="main-content" className="min-h-screen bg-background text-foreground">
       {/* ===== Floating Decorative Elements (fixed background layer) ===== */}
       <FloatingElements />
 

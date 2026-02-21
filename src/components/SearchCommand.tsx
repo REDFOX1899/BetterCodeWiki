@@ -2,19 +2,7 @@
 
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-
-// ── Types (mirrored from page.tsx) ──────────────────────────────────
-interface WikiPage {
-  id: string;
-  title: string;
-  content: string;
-  filePaths: string[];
-  importance: 'high' | 'medium' | 'low';
-  relatedPages: string[];
-  parentId?: string;
-  isSection?: boolean;
-  children?: string[];
-}
+import { WikiPage } from '@/types/wiki';
 
 interface SearchResult {
   pageId: string;

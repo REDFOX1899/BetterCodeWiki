@@ -2,36 +2,7 @@
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { FaDownload, FaFileExport, FaFileAlt, FaCode, FaGlobe, FaFileArchive } from 'react-icons/fa';
-
-// ---- Types ----
-
-interface WikiPage {
-  id: string;
-  title: string;
-  content: string;
-  filePaths: string[];
-  importance: 'high' | 'medium' | 'low';
-  relatedPages: string[];
-  parentId?: string;
-  isSection?: boolean;
-  children?: string[];
-}
-
-interface WikiSection {
-  id: string;
-  title: string;
-  pages: string[];
-  subsections?: string[];
-}
-
-interface WikiStructure {
-  id: string;
-  title: string;
-  description: string;
-  pages: WikiPage[];
-  sections: WikiSection[];
-  rootSections: string[];
-}
+import { WikiPage, WikiStructure } from '@/types/wiki';
 
 interface ExportMenuProps {
   wikiStructure: WikiStructure;

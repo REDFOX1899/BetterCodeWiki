@@ -49,6 +49,12 @@ export default function RootLayout({
       <body
         className={`${inter.variable} ${plusJakarta.variable} ${notoSerifJP.variable} ${jetbrainsMono.variable} antialiased`}
       >
+        <a
+          href="#main-content"
+          className="sr-only focus:not-sr-only focus:absolute focus:top-4 focus:left-4 focus:z-50 focus:px-4 focus:py-2 focus:bg-white focus:dark:bg-zinc-900 focus:text-sm focus:font-medium focus:rounded-md focus:shadow-lg focus:ring-2 focus:ring-blue-500"
+        >
+          Skip to content
+        </a>
         <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
           <LanguageProvider>
             {children}

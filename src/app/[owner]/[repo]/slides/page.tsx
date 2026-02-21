@@ -7,33 +7,9 @@ import { FaArrowLeft, FaSync, FaDownload, FaArrowRight, FaArrowUp, FaTimes } fro
 import ThemeToggle from '@/components/theme-toggle';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { RepoInfo } from '@/types/repoinfo';
+import { WikiPage, WikiStructure } from '@/types/wiki';
 import getRepoUrl from '@/utils/getRepoUrl';
-
-// Helper function to add tokens and other parameters to request body
-const addTokensToRequestBody = (
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  requestBody: Record<string, any>,
-  token: string,
-  repoType: string,
-  provider: string = '',
-  model: string = '',
-  isCustomModel: boolean = false,
-  customModel: string = '',
-  language: string = 'en',
-) => {
-  if (token !== '') {
-    requestBody.token = token;
-  }
-
-  // Add provider-based model selection parameters
-  requestBody.provider = provider;
-  requestBody.model = model;
-  if (isCustomModel && customModel) {
-    requestBody.custom_model = customModel;
-  }
-
-  requestBody.language = language;
-};
+import { addTokensToRequestBody } from '@/utils/addTokens';
 
 interface Slide {
   id: string;
@@ -86,30 +62,6 @@ export default function SlidesPage() {
   const [isExporting, setIsExporting] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
-
-  // Define a type for the wiki content
-  interface WikiPage {
-    id: string;
-    title: string;
-    content: string;
-    importance: string;
-    filePaths: string[];
-    relatedPages: string[];
-  }
-
-  interface WikiSection {
-    id: string;
-    title: string;
-    pages: string[];
-    subsections: string[];
-  }
-
-  interface WikiStructure {
-    description: string;
-    pages: WikiPage[];
-    sections: WikiSection[];
-    rootSections: string[];
-  }
 
   interface WikiCacheData {
     wiki_structure: WikiStructure;

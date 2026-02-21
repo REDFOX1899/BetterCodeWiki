@@ -21,35 +21,8 @@ import { motion } from 'framer-motion';
 import { FaArrowLeft, FaBitbucket, FaBook, FaBookOpen, FaComments, FaDownload, FaExclamationTriangle, FaFileExport, FaFolder, FaGithub, FaGitlab, FaHome, FaProjectDiagram, FaSearch, FaSync, FaTimes } from 'react-icons/fa';
 import DependencyGraph from '@/components/DependencyGraph';
 import DiagramDetailPanel from '@/components/DiagramDetailPanel';
-// Define the WikiSection and WikiStructure types directly in this file
-// since the imported types don't have the sections and rootSections properties
-interface WikiSection {
-  id: string;
-  title: string;
-  pages: string[];
-  subsections?: string[];
-}
-
-interface WikiPage {
-  id: string;
-  title: string;
-  content: string;
-  filePaths: string[];
-  importance: 'high' | 'medium' | 'low';
-  relatedPages: string[];
-  parentId?: string;
-  isSection?: boolean;
-  children?: string[];
-}
-
-interface WikiStructure {
-  id: string;
-  title: string;
-  description: string;
-  pages: WikiPage[];
-  sections: WikiSection[];
-  rootSections: string[];
-}
+import { WikiSection, WikiPage, WikiStructure } from '@/types/wiki';
+import { addTokensToRequestBody } from '@/utils/addTokens';
 
 // Add CSS styles for wiki with Japanese aesthetic
 const wikiStyles = `
@@ -205,50 +178,6 @@ const getCacheKey = (owner: string, repo: string, repoType: string, language: st
 
 
 
-// Helper function to add tokens and other parameters to request body
-const addTokensToRequestBody = (
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  requestBody: Record<string, any>,
-  token: string,
-  repoType: string,
-  provider: string = '',
-  model: string = '',
-  isCustomModel: boolean = false,
-  customModel: string = '',
-  language: string = 'en',
-  excludedDirs?: string,
-  excludedFiles?: string,
-  includedDirs?: string,
-  includedFiles?: string
-): void => {
-  if (token !== '') {
-    requestBody.token = token;
-  }
-
-  // Add provider-based model selection parameters
-  requestBody.provider = provider;
-  requestBody.model = model;
-  if (isCustomModel && customModel) {
-    requestBody.custom_model = customModel;
-  }
-
-  requestBody.language = language;
-
-  // Add file filter parameters if provided
-  if (excludedDirs) {
-    requestBody.excluded_dirs = excludedDirs;
-  }
-  if (excludedFiles) {
-    requestBody.excluded_files = excludedFiles;
-  }
-  if (includedDirs) {
-    requestBody.included_dirs = includedDirs;
-  }
-  if (includedFiles) {
-    requestBody.included_files = includedFiles;
-  }
-
-};
 
 const createGithubHeaders = (githubToken: string): HeadersInit => {
   const headers: HeadersInit = {
@@ -296,8 +225,14 @@ export default function RepoWikiPage() {
   const owner = params.owner as string;
   const repo = params.repo as string;
 
-  // Extract tokens from search params
-  const token = searchParams.get('token') || '';
+  // Read token from sessionStorage (secure) with URL param fallback (legacy)
+  const token = (() => {
+    if (typeof window !== 'undefined') {
+      const stored = sessionStorage.getItem('bcw_access_token');
+      if (stored) return stored;
+    }
+    return searchParams.get('token') || '';
+  })();
   const localPath = searchParams.get('local_path') ? decodeURIComponent(searchParams.get('local_path') || '') : undefined;
   const repoUrl = searchParams.get('repo_url') ? decodeURIComponent(searchParams.get('repo_url') || '') : undefined;
   const providerParam = searchParams.get('provider') || '';
@@ -345,6 +280,7 @@ export default function RepoWikiPage() {
   const [currentPageId, setCurrentPageId] = useState<string | undefined>();
   const [generatedPages, setGeneratedPages] = useState<Record<string, WikiPage>>({});
   const [pagesInProgress, setPagesInProgress] = useState(new Set<string>());
+  const [generationPhase, setGenerationPhase] = useState<'idle' | 'fetching' | 'planning' | 'generating' | 'done'>('idle');
   const [isExporting, setIsExporting] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
   const [originalMarkdown, setOriginalMarkdown] = useState<Record<string, string>>({});
@@ -352,6 +288,7 @@ export default function RepoWikiPage() {
   const [currentToken, setCurrentToken] = useState(token); // Track current effective token
   const [effectiveRepoInfo, setEffectiveRepoInfo] = useState(repoInfo); // Track effective repo info with cached data
   const [embeddingError, setEmbeddingError] = useState(false);
+  const [generatedAt, setGeneratedAt] = useState<string | null>(null);
 
   // Model selection state variables
   const [selectedProviderState, setSelectedProviderState] = useState(providerParam);
@@ -873,6 +810,7 @@ Remember:
 
     try {
       setStructureRequestInProgress(true);
+      setGenerationPhase('planning');
       setLoadingMessage(messages.loading?.determiningStructure || 'Determining wiki structure...');
 
       // Get repository URL
@@ -1267,10 +1205,11 @@ IMPORTANT:
         const initialInProgress = new Set(pages.map(p => p.id));
         setPagesInProgress(initialInProgress);
 
+        setGenerationPhase('generating');
         console.log(`Starting generation for ${pages.length} pages with controlled concurrency`);
 
         // Maximum concurrent requests
-        const MAX_CONCURRENT = 1;
+        const MAX_CONCURRENT = 3;
 
         // Create a queue of pages
         const queue = [...pages];
@@ -1295,6 +1234,7 @@ IMPORTANT:
                   // Check if all work is done (queue empty and no active requests)
                   if (queue.length === 0 && activeRequests === 0) {
                     console.log("All page generation tasks completed.");
+                    setGenerationPhase('done');
                     setIsLoading(false);
                     setLoadingMessage(undefined);
                   } else {
@@ -1361,6 +1301,7 @@ IMPORTANT:
 
       // Update loading state
       setIsLoading(true);
+      setGenerationPhase('fetching');
       setLoadingMessage(messages.loading?.fetchingStructure || 'Fetching repository structure...');
 
       let fileTreeData = '';
@@ -2019,6 +1960,9 @@ IMPORTANT:
               setWikiStructure(cachedStructure);
               setGeneratedPages(cachedData.generated_pages);
               setCurrentPageId(cachedStructure.pages.length > 0 ? cachedStructure.pages[0].id : undefined);
+              if (cachedData.generated_at) {
+                setGeneratedAt(cachedData.generated_at);
+              }
               setIsLoading(false);
               setEmbeddingError(false);
               setLoadingMessage(undefined);
@@ -2081,7 +2025,8 @@ IMPORTANT:
               wiki_structure: structureToCache,
               generated_pages: generatedPages,
               provider: selectedProviderState,
-              model: selectedModelState
+              model: selectedModelState,
+              generated_at: new Date().toISOString(),
             };
             const response = await fetch(`/api/wiki_cache`, {
               method: 'POST',
@@ -2283,17 +2228,40 @@ IMPORTANT:
 
             {/* Floating progress card */}
             <div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-30 bg-card border border-border rounded-xl elevation-3 p-4 max-w-md w-full">
+              {/* Phase steps indicator */}
+              <div className="flex items-center justify-between mb-4 px-2">
+                {([
+                  { key: 'fetching', label: 'Fetch' },
+                  { key: 'planning', label: 'Plan' },
+                  { key: 'generating', label: 'Generate' },
+                ] as const).map((step, i) => {
+                  const phases = ['idle', 'fetching', 'planning', 'generating', 'done'] as const;
+                  const currentIdx = phases.indexOf(generationPhase);
+                  const stepIdx = phases.indexOf(step.key);
+                  const isActive = generationPhase === step.key;
+                  const isDone = currentIdx > stepIdx;
+                  return (
+                    <React.Fragment key={step.key}>
+                      {i > 0 && <div className={`flex-1 h-px mx-2 ${isDone ? 'bg-primary' : 'bg-border'}`} />}
+                      <div className="flex flex-col items-center gap-1">
+                        <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold transition-colors ${isDone ? 'bg-primary text-primary-foreground' : isActive ? 'bg-primary/20 text-primary ring-2 ring-primary' : 'bg-muted text-muted-foreground'}`}>
+                          {isDone ? '✓' : i + 1}
+                        </div>
+                        <span className={`text-[10px] font-medium ${isActive ? 'text-foreground' : 'text-muted-foreground'}`}>{step.label}</span>
+                      </div>
+                    </React.Fragment>
+                  );
+                })}
+              </div>
+
               <p className="text-sm font-medium text-foreground text-center mb-1">
                 {loadingMessage || messages.common?.loading || 'Loading...'}
-              </p>
-              <p className="text-xs text-muted-foreground text-center mb-3">
-                {isExporting ? (messages.loading?.preparingDownload || 'Preparing download...') : 'Analyzing repository structure and content...'}
               </p>
 
               {/* Progress bar for page generation */}
               {wikiStructure && (
                 <>
-                  <div className="flex justify-between text-xs text-muted-foreground mb-2">
+                  <div className="flex justify-between text-xs text-muted-foreground mb-2 mt-3">
                     <span>Progress</span>
                     <span>{Math.round(100 * (wikiStructure.pages.length - pagesInProgress.size) / wikiStructure.pages.length)}%</span>
                   </div>
@@ -2365,10 +2333,24 @@ IMPORTANT:
                 <h3 className="font-semibold text-foreground truncate" title={wikiStructure.title}>{wikiStructure.title}</h3>
                 <p className="text-xs text-muted-foreground mt-1 line-clamp-2">{wikiStructure.description}</p>
 
-                <div className="flex items-center gap-2 mt-3">
+                <div className="flex items-center gap-2 mt-3 flex-wrap">
                   <div className="inline-flex items-center rounded-full border border-transparent px-2 py-0.5 text-xs font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 border-border bg-secondary text-secondary-foreground hover:bg-secondary/80">
                     {isComprehensiveView ? 'Comprehensive' : 'Concise'}
                   </div>
+                  {generatedAt && (
+                    <div className="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] text-muted-foreground border border-border" title={`Generated ${new Date(generatedAt).toLocaleString()}`}>
+                      {(() => {
+                        const diff = Date.now() - new Date(generatedAt).getTime();
+                        const mins = Math.floor(diff / 60000);
+                        if (mins < 1) return 'Just now';
+                        if (mins < 60) return `${mins}m ago`;
+                        const hrs = Math.floor(mins / 60);
+                        if (hrs < 24) return `${hrs}h ago`;
+                        const days = Math.floor(hrs / 24);
+                        return `${days}d ago`;
+                      })()}
+                    </div>
+                  )}
                   <button
                     onClick={() => setIsModelSelectionModalOpen(true)}
                     disabled={isLoading}
@@ -2441,12 +2423,34 @@ IMPORTANT:
                       )}
                     </div>
 
-                    <div className="prose prose-zinc dark:prose-invert max-w-none">
-                      <Markdown
-                        content={generatedPages[currentPageId].content}
-                        onDiagramNodeClick={handleDiagramNodeClick}
-                      />
-                    </div>
+                    {generatedPages[currentPageId].content.startsWith('Error generating content:') ? (
+                      <div className="flex flex-col items-center justify-center py-12 text-center">
+                        <div className="inline-flex items-center justify-center p-3 bg-destructive/10 rounded-full mb-4">
+                          <FaExclamationTriangle className="text-xl text-destructive" />
+                        </div>
+                        <p className="text-sm text-muted-foreground mb-4">{generatedPages[currentPageId].content}</p>
+                        <button
+                          onClick={() => {
+                            const page = wikiStructure?.pages.find(p => p.id === currentPageId);
+                            if (page) {
+                              setPagesInProgress(prev => new Set(prev).add(currentPageId));
+                              generatePageContent(page, owner, repo);
+                            }
+                          }}
+                          className="inline-flex items-center gap-2 rounded-md bg-primary text-primary-foreground px-4 py-2 text-sm font-medium hover:bg-primary/90 transition-colors"
+                        >
+                          <FaSync className="h-3 w-3" />
+                          Retry
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="prose prose-zinc dark:prose-invert max-w-none">
+                        <Markdown
+                          content={generatedPages[currentPageId].content}
+                          onDiagramNodeClick={handleDiagramNodeClick}
+                        />
+                      </div>
+                    )}
 
                     {generatedPages[currentPageId].relatedPages.length > 0 && (
                       <div className="mt-12 pt-6 border-t border-border">
