@@ -1,10 +1,11 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import dynamic from 'next/dynamic';
 import { motion } from 'framer-motion';
 import { Environment } from '@react-three/drei';
-import KnowledgeCube from './KnowledgeCube';
+import { EffectComposer, Bloom } from '@react-three/postprocessing';
+import CodeConstellation from './CodeConstellation';
 import ParticleField from './ParticleField';
 
 // Dynamically import Canvas to avoid SSR issues with Three.js
@@ -24,6 +25,8 @@ export default function Hero3D({ onSubmit, value, onChange, isSubmitting }: Hero
   const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 });
   const [isMobile, setIsMobile] = useState(false);
   const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
+  const [isVisible, setIsVisible] = useState(true);
+  const sectionRef = useRef<HTMLElement>(null);
 
   useEffect(() => {
     // Mobile detection
@@ -43,6 +46,17 @@ export default function Hero3D({ onSubmit, value, onChange, isSubmitting }: Hero
     };
   }, []);
 
+  useEffect(() => {
+    const el = sectionRef.current;
+    if (!el) return;
+    const observer = new IntersectionObserver(
+      ([entry]) => setIsVisible(entry.isIntersecting),
+      { threshold: 0 }
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+
   const handleMouseMove = useCallback((e: React.MouseEvent<HTMLElement>) => {
     if (prefersReducedMotion) return;
     // Normalize mouse position to -1 to 1
@@ -57,6 +71,7 @@ export default function Hero3D({ onSubmit, value, onChange, isSubmitting }: Hero
 
   return (
     <section
+      ref={sectionRef}
       className="relative min-h-screen flex items-center justify-center overflow-hidden bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-primary/5 via-background to-background"
       onMouseMove={handleMouseMove}
     >
@@ -66,40 +81,63 @@ export default function Hero3D({ onSubmit, value, onChange, isSubmitting }: Hero
           <Canvas
             camera={{ position: [0, 0, 6], fov: 45 }}
             dpr={[1, 2]}
+            frameloop={isVisible ? 'always' : 'never'}
             style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%' }}
           >
             <ambientLight intensity={0.5} />
             <pointLight position={[10, 10, 10]} intensity={0.8} />
-            <KnowledgeCube mouse={mousePosition} />
+            <CodeConstellation mouse={mousePosition} />
             <ParticleField />
             <Environment preset="city" />
+            <EffectComposer>
+              <Bloom
+                luminanceThreshold={0.6}
+                luminanceSmoothing={0.9}
+                intensity={0.4}
+              />
+            </EffectComposer>
           </Canvas>
         </div>
       ) : (
-        /* Static SVG/CSS fallback for mobile or reduced motion */
-        <div className="absolute inset-0 z-0 flex items-center justify-center pointer-events-none">
-          <svg
-            viewBox="0 0 400 400"
-            className="w-64 h-64 md:w-80 md:h-80 opacity-10"
-            fill="none"
-            xmlns="http://www.w3.org/2000/svg"
-          >
-            <polygon
-              points="200,40 360,140 360,260 200,360 40,260 40,140"
-              stroke="currentColor"
-              strokeWidth="1.5"
-              className="text-primary"
-            />
-            <polygon
-              points="200,80 320,155 320,245 200,320 80,245 80,155"
-              stroke="currentColor"
-              strokeWidth="1"
-              className="text-primary/50"
-            />
-            <line x1="200" y1="40" x2="200" y2="360" stroke="currentColor" strokeWidth="0.5" className="text-primary/30" />
-            <line x1="40" y1="140" x2="360" y2="260" stroke="currentColor" strokeWidth="0.5" className="text-primary/30" />
-            <line x1="360" y1="140" x2="40" y2="260" stroke="currentColor" strokeWidth="0.5" className="text-primary/30" />
-          </svg>
+        /* Mobile: animated gradient mesh + floating icons */
+        <div className="absolute inset-0 z-0">
+          {/* Animated gradient mesh */}
+          <div className="absolute inset-0 animate-gradient-shift opacity-30"
+            style={{
+              background: `
+                radial-gradient(ellipse at 20% 30%, hsl(221 83% 53% / 0.2), transparent 50%),
+                radial-gradient(ellipse at 80% 70%, hsl(199 89% 48% / 0.2), transparent 50%),
+                radial-gradient(ellipse at 50% 50%, hsl(280 80% 60% / 0.15), transparent 60%)
+              `,
+            }}
+          />
+          {/* Floating code icons */}
+          <div className="absolute top-1/4 left-[15%] animate-float-slow opacity-20 text-primary">
+            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+              <polyline points="16 18 22 12 16 6"></polyline>
+              <polyline points="8 6 2 12 8 18"></polyline>
+            </svg>
+          </div>
+          <div className="absolute top-1/3 right-[20%] animate-float-medium opacity-15 text-blue-500">
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+              <polyline points="14 2 14 8 20 8"></polyline>
+            </svg>
+          </div>
+          <div className="absolute bottom-1/3 left-[25%] animate-float-slow opacity-15 text-cyan-400" style={{animationDelay: '1s'}}>
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+              <circle cx="12" cy="12" r="10"></circle>
+              <line x1="2" y1="12" x2="22" y2="12"></line>
+              <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
+            </svg>
+          </div>
+          <div className="absolute top-2/3 right-[15%] animate-float-medium opacity-20 text-purple-400" style={{animationDelay: '0.5s'}}>
+            <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+              <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+              <line x1="3" y1="9" x2="21" y2="9"></line>
+              <line x1="9" y1="21" x2="9" y2="9"></line>
+            </svg>
+          </div>
         </div>
       )}
 
@@ -196,6 +234,12 @@ export default function Hero3D({ onSubmit, value, onChange, isSubmitting }: Hero
               <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
             </svg>
             GitHub, GitLab & Bitbucket
+          </span>
+          <span className="inline-flex items-center gap-2 px-4 py-2 rounded-full border border-border bg-card/80 backdrop-blur-sm text-label-md text-muted-foreground">
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M13.19 8.688a4.5 4.5 0 011.242 7.244l-4.5 4.5a4.5 4.5 0 01-6.364-6.364l1.757-1.757m13.35-.622l1.757-1.757a4.5 4.5 0 00-6.364-6.364l-4.5 4.5a4.5 4.5 0 001.242 7.244" />
+            </svg>
+            MCP Ready
           </span>
         </motion.div>
       </div>
