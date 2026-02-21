@@ -795,8 +795,7 @@ export default function DependencyGraph({
 
   return (
     <div
-      className="fixed inset-0 z-40 flex items-start justify-center"
-      style={{ backgroundColor: isDark ? 'rgba(0,0,0,0.7)' : 'rgba(0,0,0,0.4)' }}
+      className="fixed inset-0 z-40 flex items-start justify-center bg-black/50"
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
       {/* Backdrop blur */}
@@ -805,34 +804,19 @@ export default function DependencyGraph({
       {/* Modal container */}
       <div
         ref={containerRef}
-        className="relative max-w-6xl w-full mx-4 mt-[3vh] flex flex-col overflow-hidden"
-        style={{
-          maxHeight: '92vh',
-          borderRadius: '16px',
-          border: `1px solid ${isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)'}`,
-          backgroundColor: isDark ? '#0f172a' : '#ffffff',
-          boxShadow: isDark
-            ? '0 25px 50px -12px rgba(0,0,0,0.6), 0 0 0 1px rgba(255,255,255,0.05)'
-            : '0 25px 50px -12px rgba(0,0,0,0.2), 0 0 0 1px rgba(0,0,0,0.05)',
-        }}
+        className="relative max-w-6xl w-full mx-4 mt-[3vh] flex flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-2xl"
+        style={{ maxHeight: '92vh' }}
       >
         {/* ---- Header / Toolbar ---- */}
         <div
-          className="flex items-center justify-between px-5 py-3 shrink-0"
-          style={{
-            borderBottom: `1px solid ${isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)'}`,
-            backgroundColor: isDark ? 'rgba(15,23,42,0.9)' : 'rgba(248,250,252,0.9)',
-          }}
+          className="flex items-center justify-between px-5 py-3 shrink-0 border-b border-border bg-muted/50"
         >
           {/* Left: title + stats */}
           <div className="flex items-center gap-3">
             <div
-              className="flex items-center justify-center w-8 h-8 rounded-lg"
-              style={{
-                backgroundColor: isDark ? 'rgba(96,165,250,0.15)' : 'rgba(59,130,246,0.1)',
-              }}
+              className="flex items-center justify-center w-8 h-8 rounded-lg bg-primary/10"
             >
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke={isDark ? '#60a5fa' : '#3b82f6'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" className="stroke-primary" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <circle cx="6" cy="6" r="3" />
                 <circle cx="18" cy="6" r="3" />
                 <circle cx="12" cy="18" r="3" />
@@ -842,10 +826,10 @@ export default function DependencyGraph({
               </svg>
             </div>
             <div>
-              <h2 className="text-sm font-semibold" style={{ color: isDark ? '#e2e8f0' : '#1e293b' }}>
+              <h2 className="text-sm font-semibold text-foreground">
                 Page Relationships
               </h2>
-              <span className="text-xs" style={{ color: isDark ? '#94a3b8' : '#64748b' }}>
+              <span className="text-xs text-muted-foreground">
                 {layoutNodes.length} pages &middot; {edges.length} connections
               </span>
             </div>
@@ -853,10 +837,7 @@ export default function DependencyGraph({
 
           {/* Center: layout switcher */}
           <div
-            className="flex items-center rounded-lg p-0.5 gap-0.5"
-            style={{
-              backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)',
-            }}
+            className="flex items-center rounded-lg p-0.5 gap-0.5 bg-muted/50"
           >
             {([
               { mode: 'force' as LayoutMode, icon: <FaProjectDiagram className="w-3 h-3" />, label: 'Force' },
@@ -866,15 +847,11 @@ export default function DependencyGraph({
               <button
                 key={mode}
                 onClick={() => setLayoutMode(mode)}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all duration-150"
-                style={{
-                  backgroundColor: layoutMode === mode
-                    ? (isDark ? 'rgba(96,165,250,0.2)' : 'rgba(59,130,246,0.12)')
-                    : 'transparent',
-                  color: layoutMode === mode
-                    ? (isDark ? '#93c5fd' : '#2563eb')
-                    : (isDark ? '#94a3b8' : '#64748b'),
-                }}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all duration-150 ${
+                  layoutMode === mode
+                    ? 'bg-primary/15 text-primary'
+                    : 'text-muted-foreground'
+                }`}
               >
                 {icon}
                 <span className="hidden sm:inline">{label}</span>
@@ -886,13 +863,7 @@ export default function DependencyGraph({
           <div className="flex items-center gap-1">
             <button
               onClick={zoomIn}
-              className="p-2 rounded-lg transition-colors"
-              style={{
-                color: isDark ? '#94a3b8' : '#64748b',
-                backgroundColor: 'transparent',
-              }}
-              onMouseEnter={(e) => e.currentTarget.style.backgroundColor = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)'}
-              onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+              className="p-2 rounded-lg transition-colors text-muted-foreground hover:bg-muted"
               aria-label="Zoom in"
               title="Zoom in"
             >
@@ -900,13 +871,7 @@ export default function DependencyGraph({
             </button>
             <button
               onClick={zoomOut}
-              className="p-2 rounded-lg transition-colors"
-              style={{
-                color: isDark ? '#94a3b8' : '#64748b',
-                backgroundColor: 'transparent',
-              }}
-              onMouseEnter={(e) => e.currentTarget.style.backgroundColor = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)'}
-              onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+              className="p-2 rounded-lg transition-colors text-muted-foreground hover:bg-muted"
               aria-label="Zoom out"
               title="Zoom out"
             >
@@ -914,30 +879,18 @@ export default function DependencyGraph({
             </button>
             <button
               onClick={fitToView}
-              className="p-2 rounded-lg transition-colors"
-              style={{
-                color: isDark ? '#94a3b8' : '#64748b',
-                backgroundColor: 'transparent',
-              }}
-              onMouseEnter={(e) => e.currentTarget.style.backgroundColor = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)'}
-              onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+              className="p-2 rounded-lg transition-colors text-muted-foreground hover:bg-muted"
               aria-label="Fit to view"
               title="Fit to view"
             >
               <FaExpand className="w-3.5 h-3.5" />
             </button>
 
-            <div className="w-px h-5 mx-1" style={{ backgroundColor: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)' }} />
+            <div className="w-px h-5 mx-1 bg-border/50" />
 
             <button
               onClick={onClose}
-              className="p-2 rounded-lg transition-colors"
-              style={{
-                color: isDark ? '#94a3b8' : '#64748b',
-                backgroundColor: 'transparent',
-              }}
-              onMouseEnter={(e) => e.currentTarget.style.backgroundColor = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)'}
-              onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+              className="p-2 rounded-lg transition-colors text-muted-foreground hover:bg-muted"
               aria-label="Close graph"
             >
               <FaTimes className="w-3.5 h-3.5" />
@@ -949,8 +902,7 @@ export default function DependencyGraph({
         <div className="flex-1 relative" style={{ minHeight: '500px' }}>
           {pageCount < 3 ? (
             <div
-              className="flex items-center justify-center h-full min-h-[500px] text-sm"
-              style={{ color: isDark ? '#64748b' : '#94a3b8' }}
+              className="flex items-center justify-center h-full min-h-[500px] text-sm text-muted-foreground"
             >
               Not enough pages to display a graph (need at least 3)
             </div>
@@ -1192,20 +1144,12 @@ export default function DependencyGraph({
                   }}
                 >
                   <div
-                    className="px-3 py-2 rounded-lg text-xs"
-                    style={{
-                      backgroundColor: isDark ? '#1e293b' : '#ffffff',
-                      border: `1px solid ${isDark ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.1)'}`,
-                      boxShadow: isDark
-                        ? '0 8px 16px rgba(0,0,0,0.4)'
-                        : '0 8px 16px rgba(0,0,0,0.12)',
-                      color: isDark ? '#e2e8f0' : '#1e293b',
-                    }}
+                    className="px-3 py-2 rounded-lg text-xs bg-popover text-popover-foreground border border-border shadow-lg"
                   >
                     <div className="font-semibold mb-0.5" style={{ fontSize: '12px' }}>
                       {tooltip.title}
                     </div>
-                    <div style={{ fontSize: '10px', color: isDark ? '#94a3b8' : '#64748b' }}>
+                    <div className="text-muted-foreground" style={{ fontSize: '10px' }}>
                       {CATEGORY_THEMES[tooltip.category].label} &middot; Click to focus, double-click to open
                     </div>
                   </div>
@@ -1214,25 +1158,11 @@ export default function DependencyGraph({
 
               {/* Legend */}
               <div
-                className="absolute bottom-3 left-3 rounded-xl overflow-hidden"
-                style={{
-                  backgroundColor: isDark ? 'rgba(15,23,42,0.92)' : 'rgba(255,255,255,0.92)',
-                  border: `1px solid ${isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)'}`,
-                  backdropFilter: 'blur(12px)',
-                  boxShadow: isDark
-                    ? '0 4px 12px rgba(0,0,0,0.3)'
-                    : '0 4px 12px rgba(0,0,0,0.08)',
-                }}
+                className="absolute bottom-3 left-3 rounded-xl overflow-hidden bg-popover/90 border border-border/30 backdrop-blur-md shadow-sm"
               >
                 <div
-                  className="px-3 py-1.5 text-xs font-semibold"
-                  style={{
-                    borderBottom: `1px solid ${isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)'}`,
-                    color: isDark ? '#94a3b8' : '#64748b',
-                    letterSpacing: '0.04em',
-                    textTransform: 'uppercase',
-                    fontSize: '9px',
-                  }}
+                  className="px-3 py-1.5 text-xs font-semibold text-muted-foreground border-b border-border/30 uppercase tracking-wide"
+                  style={{ fontSize: '9px' }}
                 >
                   Legend
                 </div>
@@ -1251,11 +1181,8 @@ export default function DependencyGraph({
                             }}
                           />
                           <span
-                            className="text-xs"
-                            style={{
-                              color: isDark ? '#cbd5e1' : '#475569',
-                              fontSize: '11px',
-                            }}
+                            className="text-xs text-muted-foreground"
+                            style={{ fontSize: '11px' }}
                           >
                             {theme.label}
                           </span>
@@ -1267,20 +1194,9 @@ export default function DependencyGraph({
 
               {/* Interaction hint */}
               <div
-                className="absolute bottom-3 right-3 px-3 py-2 rounded-xl text-xs"
-                style={{
-                  backgroundColor: isDark ? 'rgba(15,23,42,0.92)' : 'rgba(255,255,255,0.92)',
-                  border: `1px solid ${isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)'}`,
-                  backdropFilter: 'blur(12px)',
-                  color: isDark ? '#64748b' : '#94a3b8',
-                  boxShadow: isDark
-                    ? '0 4px 12px rgba(0,0,0,0.3)'
-                    : '0 4px 12px rgba(0,0,0,0.08)',
-                }}
+                className="absolute bottom-3 right-3 px-3 py-2 rounded-xl text-xs text-muted-foreground bg-popover/90 border border-border/30 backdrop-blur-md shadow-sm"
               >
-                <span style={{ color: isDark ? '#94a3b8' : '#64748b' }}>
-                  Scroll to zoom &middot; Drag to pan &middot; Click node to focus
-                </span>
+                Scroll to zoom &middot; Drag to pan &middot; Click node to focus
               </div>
             </>
           )}

@@ -1,13 +1,15 @@
 'use client';
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { FaDownload, FaFileExport, FaFileAlt, FaCode, FaGlobe, FaFileArchive } from 'react-icons/fa';
+import { FaDownload, FaFileExport, FaFileAlt, FaCode, FaGlobe, FaFileArchive, FaCheck } from 'react-icons/fa';
+import { FiCopy } from 'react-icons/fi';
 import { WikiPage, WikiStructure } from '@/types/wiki';
 
 interface ExportMenuProps {
   wikiStructure: WikiStructure;
   generatedPages: Record<string, WikiPage>;
   repoInfo: { owner: string; repo: string };
+  currentPageId?: string | null;
 }
 
 // ---- Utility: slugify ----
@@ -719,9 +721,10 @@ function convertMarkdownTablesToHtml(text: string): string {
 
 // ---- Component ----
 
-const ExportMenu: React.FC<ExportMenuProps> = ({ wikiStructure, generatedPages, repoInfo }) => {
+const ExportMenu: React.FC<ExportMenuProps> = ({ wikiStructure, generatedPages, repoInfo, currentPageId }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
+  const [embedCopied, setEmbedCopied] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
   // Close dropdown on outside click
@@ -771,6 +774,20 @@ const ExportMenu: React.FC<ExportMenuProps> = ({ wikiStructure, generatedPages, 
     [wikiStructure, generatedPages, repoInfo]
   );
 
+  const handleCopyEmbed = useCallback(() => {
+    const targetPageId = currentPageId || wikiStructure.pages[0]?.id;
+    if (!targetPageId) return;
+
+    const origin = typeof window !== 'undefined' ? window.location.origin : '';
+    const embedUrl = `${origin}/embed/${repoInfo.owner}/${repoInfo.repo}/${targetPageId}`;
+    const snippet = `<iframe src="${embedUrl}" width="100%" height="600" frameborder="0"></iframe>`;
+
+    navigator.clipboard.writeText(snippet);
+    setEmbedCopied(true);
+    setIsOpen(false);
+    setTimeout(() => setEmbedCopied(false), 2000);
+  }, [currentPageId, wikiStructure.pages, repoInfo.owner, repoInfo.repo]);
+
   const exportOptions = [
     {
       format: 'markdown' as const,
@@ -809,6 +826,20 @@ const ExportMenu: React.FC<ExportMenuProps> = ({ wikiStructure, generatedPages, 
       <div className="relative">
         {isOpen && (
           <div className="absolute bottom-full left-0 mb-2 w-56 bg-card border border-border rounded-xl shadow-lg py-2 z-20">
+            {/* Embed copy option */}
+            <button
+              onClick={handleCopyEmbed}
+              className="w-full flex items-center gap-3 px-4 py-2 text-sm text-foreground hover:bg-muted/50 transition-colors"
+            >
+              <span className="text-muted-foreground">
+                {embedCopied ? <FaCheck className="h-4 w-4 text-green-500" /> : <FiCopy className="h-4 w-4" />}
+              </span>
+              <span className="flex-1 text-left font-medium">
+                {embedCopied ? 'Copied!' : 'Copy Embed Code'}
+              </span>
+              <span className="text-xs text-muted-foreground">iframe</span>
+            </button>
+            <div className="my-1 mx-3 border-t border-border" />
             {exportOptions.map((option) => (
               <button
                 key={option.format}

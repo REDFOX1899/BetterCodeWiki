@@ -1,5 +1,7 @@
 import os
 import logging
+import time
+from collections import defaultdict
 from fastapi import FastAPI, HTTPException, Query, Request, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
@@ -9,6 +11,11 @@ from datetime import datetime
 from pydantic import BaseModel, Field
 import google.generativeai as genai
 import asyncio
+from slowapi import Limiter
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
+
+from api.wiki_structure_parser import parse_wiki_structure, convert_json_to_xml
 
 # Configure logging
 from api.logging_config import setup_logging
@@ -16,12 +23,88 @@ from api.logging_config import setup_logging
 setup_logging()
 logger = logging.getLogger(__name__)
 
+# --- Rate Limiting Setup ---
+
+# slowapi limiter for HTTP endpoints (in-memory storage by default)
+limiter = Limiter(key_func=get_remote_address)
+
+
+class WebSocketRateLimiter:
+    """
+    In-memory per-IP rate limiter for WebSocket endpoints.
+
+    slowapi does not support WebSocket connections, so this class provides
+    equivalent functionality using a sliding-window counter approach.
+    """
+
+    def __init__(self):
+        # Maps (ip, endpoint) -> list of timestamps
+        self._hits: Dict[str, list] = defaultdict(list)
+
+    def is_allowed(self, ip: str, endpoint: str, max_requests: int, window_seconds: int) -> tuple[bool, int]:
+        """
+        Check if a request from the given IP to the given endpoint is allowed.
+
+        Returns:
+            A tuple of (allowed: bool, retry_after_seconds: int).
+            retry_after_seconds is 0 when allowed is True.
+        """
+        key = f"{ip}:{endpoint}"
+        now = time.monotonic()
+        cutoff = now - window_seconds
+
+        # Prune old entries outside the window
+        self._hits[key] = [t for t in self._hits[key] if t > cutoff]
+
+        if len(self._hits[key]) >= max_requests:
+            # Calculate how long until the oldest entry expires
+            oldest = self._hits[key][0]
+            retry_after = int(oldest + window_seconds - now) + 1
+            return False, retry_after
+
+        self._hits[key].append(now)
+        return True, 0
+
+
+ws_rate_limiter = WebSocketRateLimiter()
+
 
 # Initialize FastAPI app
 app = FastAPI(
     title="Streaming API",
     description="API for streaming chat completions"
 )
+
+# Register slowapi state and custom rate-limit exception handler
+app.state.limiter = limiter
+
+
+def _custom_rate_limit_exceeded_handler(request: Request, exc: RateLimitExceeded) -> JSONResponse:
+    """
+    Custom handler for HTTP 429 rate limit exceeded responses.
+
+    Returns a JSON body with a clear error message and includes a
+    Retry-After header indicating how many seconds the client should wait.
+    slowapi's _inject_headers is used to set standard rate-limit headers
+    including Retry-After.
+    """
+    limit_detail = str(exc.detail) if hasattr(exc, "detail") else "Rate limit exceeded"
+    response = JSONResponse(
+        status_code=429,
+        content={
+            "error": "Rate limit exceeded",
+            "detail": f"Too many requests. Limit is {limit_detail}. Please slow down and try again later."
+        }
+    )
+    # Inject rate-limit headers (X-RateLimit-Limit, X-RateLimit-Remaining,
+    # X-RateLimit-Reset, Retry-After) via slowapi's built-in mechanism
+    response = request.app.state.limiter._inject_headers(
+        response, request.state.view_rate_limit
+    )
+    return response
+
+
+app.add_exception_handler(RateLimitExceeded, _custom_rate_limit_exceeded_handler)
 
 # Configure CORS
 app.add_middleware(
@@ -98,6 +181,7 @@ class WikiCacheData(BaseModel):
     repo: Optional[RepoInfo] = None
     provider: Optional[str] = None
     model: Optional[str] = None
+    template: Optional[str] = None
 
 class WikiCacheRequest(BaseModel):
     """
@@ -109,6 +193,7 @@ class WikiCacheRequest(BaseModel):
     generated_pages: Dict[str, WikiPage]
     provider: str
     model: str
+    template: Optional[str] = None
 
 class WikiExportRequest(BaseModel):
     """
@@ -117,6 +202,21 @@ class WikiExportRequest(BaseModel):
     repo_url: str = Field(..., description="URL of the repository")
     pages: List[WikiPage] = Field(..., description="List of wiki pages to export")
     format: Literal["markdown", "json"] = Field(..., description="Export format (markdown or json)")
+
+class RegeneratePageRequest(BaseModel):
+    """
+    Model for requesting regeneration of a single wiki page.
+    """
+    owner: str = Field(..., description="Repository owner")
+    repo: str = Field(..., description="Repository name")
+    repo_type: str = Field("github", description="Repository type (github, gitlab, bitbucket)")
+    page_id: str = Field(..., description="ID of the page to regenerate")
+    language: str = Field("en", description="Language for content generation")
+    provider: str = Field("google", description="LLM provider")
+    model: Optional[str] = Field(None, description="Model name")
+    custom_model: Optional[str] = Field(None, description="Custom model identifier")
+    access_token: Optional[str] = Field(None, description="Access token for private repos")
+    repo_url: Optional[str] = Field(None, description="Full repository URL")
 
 # --- Model Configuration Models ---
 class Model(BaseModel):
@@ -147,6 +247,26 @@ class AuthorizationConfig(BaseModel):
 
 from api.config import configs, WIKI_AUTH_MODE, WIKI_AUTH_CODE
 from api.diagram_extract import extract_diagram_data
+
+# Load wiki templates configuration
+_WIKI_TEMPLATES_PATH = os.path.join(os.path.dirname(__file__), "config", "wiki_templates.json")
+_wiki_templates_cache: Optional[Dict[str, Any]] = None
+
+def _load_wiki_templates() -> Dict[str, Any]:
+    global _wiki_templates_cache
+    if _wiki_templates_cache is None:
+        with open(_WIKI_TEMPLATES_PATH, "r", encoding="utf-8") as f:
+            _wiki_templates_cache = json.load(f)
+    return _wiki_templates_cache
+
+@app.get("/api/wiki_templates")
+async def get_wiki_templates():
+    """Return available wiki template configurations."""
+    try:
+        return _load_wiki_templates()
+    except Exception as e:
+        logger.error(f"Error loading wiki templates: {e}")
+        raise HTTPException(status_code=500, detail="Failed to load wiki templates")
 
 @app.get("/lang/config")
 async def get_lang_config():
@@ -393,18 +513,129 @@ def generate_json_export(repo_url: str, pages: List[WikiPage]) -> str:
     return json.dumps(export_data, indent=2)
 
 # Import the simplified chat implementation
-from api.simple_chat import chat_completions_stream
-from api.websocket_wiki import handle_websocket_chat
-from api.diagram_explain import handle_diagram_explain
+from api.simple_chat import chat_completions_stream as _original_chat_completions_stream
+from api.websocket_wiki import handle_websocket_chat as _original_handle_websocket_chat
+from api.diagram_explain import handle_diagram_explain as _original_handle_diagram_explain
 
-# Add the chat_completions_stream endpoint to the main app
+
+# --- Rate-limited endpoint wrappers ---
+
+# Wiki generation WebSocket endpoints: 5 requests per hour per IP
+_WS_WIKI_MAX_REQUESTS = 5
+_WS_WIKI_WINDOW_SECONDS = 3600  # 1 hour
+
+# Chat/ask HTTP endpoint: 30 requests per hour per IP
+_CHAT_RATE_LIMIT = "30/hour"
+
+# Chat/ask WebSocket endpoint: 30 requests per hour per IP
+_WS_CHAT_MAX_REQUESTS = 30
+_WS_CHAT_WINDOW_SECONDS = 3600  # 1 hour
+
+
+@limiter.limit(_CHAT_RATE_LIMIT)
+async def chat_completions_stream(request: Request):
+    """
+    Rate-limited wrapper for the chat completions streaming endpoint.
+
+    Applies a limit of 30 requests per hour per IP address via slowapi.
+    The underlying handler reads the JSON body from the Request object.
+    """
+    from api.simple_chat import ChatCompletionRequest
+    body = await request.json()
+    chat_request = ChatCompletionRequest(**body)
+    return await _original_chat_completions_stream(chat_request)
+
+
+async def rate_limited_websocket_chat(websocket: WebSocket):
+    """
+    Rate-limited wrapper for the /ws/chat WebSocket endpoint.
+
+    Checks the per-IP rate limit (30 requests/hour) before accepting the
+    connection. If the limit is exceeded, sends a 429 close code with
+    a Retry-After message and closes the WebSocket.
+    """
+    client_ip = websocket.client.host if websocket.client else "unknown"
+    allowed, retry_after = ws_rate_limiter.is_allowed(
+        client_ip, "/ws/chat", _WS_CHAT_MAX_REQUESTS, _WS_CHAT_WINDOW_SECONDS
+    )
+    if not allowed:
+        logger.warning(f"WebSocket rate limit exceeded for {client_ip} on /ws/chat")
+        await websocket.accept()
+        await websocket.send_json({
+            "error": "Rate limit exceeded",
+            "detail": f"Too many requests. You are limited to {_WS_CHAT_MAX_REQUESTS} requests per hour. Please retry after {retry_after} seconds.",
+            "retry_after": retry_after
+        })
+        await websocket.close(code=1008, reason="Rate limit exceeded")
+        return
+    await _original_handle_websocket_chat(websocket)
+
+
+async def rate_limited_diagram_explain(websocket: WebSocket):
+    """
+    Rate-limited wrapper for the /ws/diagram/explain WebSocket endpoint.
+
+    Checks the per-IP rate limit (5 requests/hour) before accepting the
+    connection. If the limit is exceeded, sends a 429 close code with
+    a Retry-After message and closes the WebSocket.
+    """
+    client_ip = websocket.client.host if websocket.client else "unknown"
+    allowed, retry_after = ws_rate_limiter.is_allowed(
+        client_ip, "/ws/diagram/explain", _WS_WIKI_MAX_REQUESTS, _WS_WIKI_WINDOW_SECONDS
+    )
+    if not allowed:
+        logger.warning(f"WebSocket rate limit exceeded for {client_ip} on /ws/diagram/explain")
+        await websocket.accept()
+        await websocket.send_json({
+            "error": "Rate limit exceeded",
+            "detail": f"Too many requests. You are limited to {_WS_WIKI_MAX_REQUESTS} requests per hour. Please retry after {retry_after} seconds.",
+            "retry_after": retry_after
+        })
+        await websocket.close(code=1008, reason="Rate limit exceeded")
+        return
+    await _original_handle_diagram_explain(websocket)
+
+
+# Add the rate-limited chat_completions_stream endpoint to the main app
 app.add_api_route("/chat/completions/stream", chat_completions_stream, methods=["POST"])
 
-# Add the WebSocket endpoint
-app.add_websocket_route("/ws/chat", handle_websocket_chat)
+# Add the rate-limited WebSocket endpoints
+app.add_websocket_route("/ws/chat", rate_limited_websocket_chat)
+app.add_websocket_route("/ws/diagram/explain", rate_limited_diagram_explain)
 
-# Add the diagram explain WebSocket endpoint
-app.add_websocket_route("/ws/diagram/explain", handle_diagram_explain)
+
+# --- Wiki Structure Parsing Endpoint ---
+
+class ParseStructureRequest(BaseModel):
+    """Request body for the wiki structure parsing endpoint."""
+    raw_text: str = Field(..., description="Raw LLM response text containing wiki structure (XML or JSON)")
+    output_format: Literal["json", "xml"] = Field("json", description="Desired output format: 'json' for normalized dict, 'xml' for XML string")
+
+
+@app.post("/api/parse_wiki_structure")
+async def parse_wiki_structure_endpoint(request: ParseStructureRequest):
+    """
+    Parse a raw LLM response into a normalized wiki structure.
+
+    Tries XML parsing first, then JSON parsing, then regex extraction.
+    Returns either a normalized JSON dict or an XML string depending on
+    the requested output_format.
+
+    This endpoint allows the frontend to delegate robust parsing to the
+    backend, handling cases where LLMs return malformed XML or JSON
+    instead of the requested XML format.
+    """
+    try:
+        structure = parse_wiki_structure(request.raw_text)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+
+    if request.output_format == "xml":
+        xml_str = convert_json_to_xml(structure)
+        return Response(content=xml_str, media_type="application/xml")
+
+    return JSONResponse(content=structure)
+
 
 # --- Wiki Cache Helper Functions ---
 
@@ -449,7 +680,8 @@ async def save_wiki_cache(data: WikiCacheRequest) -> bool:
             generated_pages=data.generated_pages,
             repo=data.repo,
             provider=data.provider,
-            model=data.model
+            model=data.model,
+            template=data.template
         )
         # Log size of data to be cached for debugging (avoid logging full content if large)
         try:
@@ -552,6 +784,262 @@ async def delete_wiki_cache(
     else:
         logger.warning(f"Wiki cache not found, cannot delete: {cache_path}")
         raise HTTPException(status_code=404, detail="Wiki cache not found")
+
+@app.post("/api/wiki/regenerate_page")
+@limiter.limit("10/hour")
+async def regenerate_wiki_page(request: Request, body: RegeneratePageRequest):
+    """
+    Regenerate a single wiki page without regenerating the entire wiki.
+
+    Reads the existing cached wiki to get the page's context and file associations,
+    calls the LLM to regenerate just that one page, updates the cached wiki JSON
+    with the new page content (preserving all other pages), and returns the
+    regenerated page content.
+    """
+    logger.info(f"Regenerate page request: {body.owner}/{body.repo} page={body.page_id}")
+
+    # Read existing cache
+    cached = await read_wiki_cache(body.owner, body.repo, body.repo_type, body.language)
+    if not cached:
+        raise HTTPException(status_code=404, detail="No cached wiki found for this repository. Generate the full wiki first.")
+
+    # Find the page in the cache
+    page_data = cached.generated_pages.get(body.page_id)
+    if not page_data:
+        raise HTTPException(status_code=404, detail=f"Page '{body.page_id}' not found in cached wiki.")
+
+    # Find the page in the wiki structure for file paths
+    structure_page = None
+    for p in cached.wiki_structure.pages:
+        if p.id == body.page_id:
+            structure_page = p
+            break
+
+    file_paths = page_data.filePaths or (structure_page.filePaths if structure_page else [])
+    page_title = page_data.title
+
+    # Build the repo URL
+    repo_url = body.repo_url or ""
+    if not repo_url and cached.repo:
+        repo_url = cached.repo.repoUrl or ""
+    if not repo_url:
+        type_hosts = {"github": "https://github.com", "gitlab": "https://gitlab.com", "bitbucket": "https://bitbucket.org"}
+        base = type_hosts.get(body.repo_type, "https://github.com")
+        repo_url = f"{base}/{body.owner}/{body.repo}"
+
+    # Build file URL helper
+    def generate_file_url(file_path: str) -> str:
+        if body.repo_type == "github":
+            return f"{repo_url}/blob/main/{file_path}"
+        elif body.repo_type == "gitlab":
+            return f"{repo_url}/-/blob/main/{file_path}"
+        elif body.repo_type == "bitbucket":
+            return f"{repo_url}/src/main/{file_path}"
+        return file_path
+
+    # Build the same prompt used by the frontend for page generation
+    language_name = {
+        "en": "English", "ja": "Japanese (\u65e5\u672c\u8a9e)", "zh": "Mandarin Chinese (\u4e2d\u6587)",
+        "zh-tw": "Traditional Chinese (\u7e41\u9ad4\u4e2d\u6587)", "es": "Spanish (Espa\u00f1ol)",
+        "kr": "Korean (\ud55c\uad6d\uc5b4)", "vi": "Vietnamese (Ti\u1ebfng Vi\u1ec7t)",
+        "pt-br": "Brazilian Portuguese (Portugu\u00eas Brasileiro)",
+        "fr": "Fran\u00e7ais (French)", "ru": "\u0420\u0443\u0441\u0441\u043a\u0438\u0439 (Russian)",
+    }.get(body.language, "English")
+
+    file_links = "\n".join(f"- [{fp}]({generate_file_url(fp)})" for fp in file_paths)
+
+    prompt_content = f"""You are an expert technical writer and software architect.
+Your task is to generate a comprehensive and accurate technical wiki page in Markdown format about a specific feature, system, or module within a given software project.
+
+You will be given:
+1. The "[WIKI_PAGE_TOPIC]" for the page you need to create.
+2. A list of "[RELEVANT_SOURCE_FILES]" from the project that you MUST use as the sole basis for the content.
+
+CRITICAL STARTING INSTRUCTION:
+The very first thing on the page MUST be a `<details>` block listing ALL the `[RELEVANT_SOURCE_FILES]` you used to generate the content.
+Format it exactly like this:
+<details>
+<summary>Relevant source files</summary>
+
+The following files were used as context for generating this wiki page:
+
+{file_links}
+</details>
+
+Immediately after the `<details>` block, the main title of the page should be a H1 Markdown heading: `# {page_title}`.
+
+Based ONLY on the content of the `[RELEVANT_SOURCE_FILES]`:
+
+1.  **Introduction:** Start with a concise introduction explaining the purpose and overview of "{page_title}".
+2.  **Detailed Sections:** Break down "{page_title}" into logical sections using H2 and H3 headings.
+3.  **Mermaid Diagrams:** Use Mermaid diagrams to visually represent architectures and flows. Use "graph TD" directive.
+4.  **Tables:** Use Markdown tables to summarize key information.
+5.  **Source Citations:** Cite source files using: `Sources: [filename.ext:start_line-end_line]()`.
+6.  **Technical Accuracy:** All information must be derived from the source files.
+
+IMPORTANT: Generate the content in {language_name} language.
+"""
+
+    # Call the LLM via the existing RAG infrastructure
+    from api.rag import RAG
+    from api.config import get_model_config
+    from adalflow.core.types import ModelType
+
+    model_to_use = body.custom_model or body.model
+    model_config = get_model_config(body.provider, model_to_use)["model_kwargs"]
+
+    # Try to set up RAG for context
+    context_text = ""
+    try:
+        request_rag = RAG(provider=body.provider, model=model_to_use)
+        request_rag.prepare_retriever(repo_url, body.repo_type, body.access_token)
+        retrieved = request_rag(prompt_content, language=body.language)
+        if retrieved and retrieved[0].documents:
+            docs_by_file = {}
+            for doc in retrieved[0].documents:
+                fp = doc.meta_data.get("file_path", "unknown")
+                docs_by_file.setdefault(fp, []).append(doc)
+            parts = []
+            for fp, docs in docs_by_file.items():
+                parts.append(f"## File Path: {fp}\n\n" + "\n\n".join(d.text for d in docs))
+            context_text = "\n\n----------\n\n".join(parts)
+    except Exception as e:
+        logger.warning(f"RAG setup/retrieval failed during regeneration: {e}")
+
+    system_prompt = f"""You are an expert technical writer generating wiki documentation for the repository {body.owner}/{body.repo}.
+You MUST respond in {language_name} language."""
+
+    full_prompt = f"/no_think {system_prompt}\n\n"
+    if context_text.strip():
+        full_prompt += f"<START_OF_CONTEXT>\n{context_text}\n<END_OF_CONTEXT>\n\n"
+    else:
+        full_prompt += "<note>Answering without retrieval augmentation.</note>\n\n"
+    full_prompt += f"<query>\n{prompt_content}\n</query>\n\nAssistant: "
+
+    # Call the LLM (non-streaming)
+    import google.generativeai as genai_mod
+    from adalflow.components.model_client.ollama_client import OllamaClient as OllamaClientLib
+
+    content = ""
+    try:
+        if body.provider == "google":
+            gmodel = genai_mod.GenerativeModel(
+                model_name=model_config["model"],
+                generation_config={
+                    "temperature": model_config["temperature"],
+                    "top_p": model_config["top_p"],
+                    "top_k": model_config["top_k"],
+                },
+            )
+            response = gmodel.generate_content(full_prompt, stream=False)
+            content = response.text
+        elif body.provider == "openai":
+            from api.openai_client import OpenAIClient as OAI
+            client = OAI()
+            mk = {"model": model_to_use, "stream": False, "temperature": model_config["temperature"]}
+            if "top_p" in model_config:
+                mk["top_p"] = model_config["top_p"]
+            api_kwargs = client.convert_inputs_to_api_kwargs(input=full_prompt, model_kwargs=mk, model_type=ModelType.LLM)
+            resp = await client.acall(api_kwargs=api_kwargs, model_type=ModelType.LLM)
+            if hasattr(resp, "choices") and resp.choices:
+                content = resp.choices[0].message.content or ""
+            else:
+                content = str(resp)
+        elif body.provider == "openrouter":
+            from api.openrouter_client import OpenRouterClient as ORC
+            client = ORC()
+            mk = {"model": model_to_use, "stream": False, "temperature": model_config["temperature"]}
+            if "top_p" in model_config:
+                mk["top_p"] = model_config["top_p"]
+            api_kwargs = client.convert_inputs_to_api_kwargs(input=full_prompt, model_kwargs=mk, model_type=ModelType.LLM)
+            resp = await client.acall(api_kwargs=api_kwargs, model_type=ModelType.LLM)
+            if hasattr(resp, "choices") and resp.choices:
+                content = resp.choices[0].message.content or ""
+            else:
+                content = str(resp)
+        elif body.provider == "ollama":
+            client = OllamaClientLib()
+            mk = {"model": model_config["model"], "stream": False, "options": {"temperature": model_config["temperature"], "top_p": model_config["top_p"], "num_ctx": model_config.get("num_ctx", 8192)}}
+            api_kwargs = client.convert_inputs_to_api_kwargs(input=full_prompt + " /no_think", model_kwargs=mk, model_type=ModelType.LLM)
+            resp = await client.acall(api_kwargs=api_kwargs, model_type=ModelType.LLM)
+            content = getattr(resp, "text", None) or getattr(resp, "response", None) or str(resp)
+        elif body.provider == "bedrock":
+            from api.bedrock_client import BedrockClient as BRC
+            client = BRC()
+            mk = {"model": model_to_use}
+            for k in ["temperature", "top_p"]:
+                if k in model_config:
+                    mk[k] = model_config[k]
+            api_kwargs = client.convert_inputs_to_api_kwargs(input=full_prompt, model_kwargs=mk, model_type=ModelType.LLM)
+            resp = await client.acall(api_kwargs=api_kwargs, model_type=ModelType.LLM)
+            content = str(resp)
+        elif body.provider == "azure":
+            from api.azureai_client import AzureAIClient as AZC
+            client = AZC()
+            mk = {"model": model_to_use, "stream": False, "temperature": model_config["temperature"], "top_p": model_config["top_p"]}
+            api_kwargs = client.convert_inputs_to_api_kwargs(input=full_prompt, model_kwargs=mk, model_type=ModelType.LLM)
+            resp = await client.acall(api_kwargs=api_kwargs, model_type=ModelType.LLM)
+            if hasattr(resp, "choices") and resp.choices:
+                content = resp.choices[0].message.content or ""
+            else:
+                content = str(resp)
+        elif body.provider == "dashscope":
+            from api.dashscope_client import DashscopeClient as DSC
+            client = DSC()
+            mk = {"model": model_to_use, "stream": False, "temperature": model_config["temperature"], "top_p": model_config["top_p"]}
+            api_kwargs = client.convert_inputs_to_api_kwargs(input=full_prompt, model_kwargs=mk, model_type=ModelType.LLM)
+            resp = await client.acall(api_kwargs=api_kwargs, model_type=ModelType.LLM)
+            content = str(resp)
+        else:
+            raise HTTPException(status_code=400, detail=f"Unsupported provider: {body.provider}")
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"LLM call failed during page regeneration: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to regenerate page: {str(e)}")
+
+    # Clean up content
+    content = content.replace("```markdown\n", "").rstrip("`").strip()
+
+    if not content:
+        raise HTTPException(status_code=500, detail="LLM returned empty content for page regeneration.")
+
+    # Extract diagram data from the new content
+    diagram_data = None
+    try:
+        diagram_data = extract_diagram_data(content)
+    except Exception as e:
+        logger.warning(f"Failed to extract diagram data for regenerated page {body.page_id}: {e}")
+
+    # Update the cached page
+    updated_page = WikiPage(
+        id=page_data.id,
+        title=page_data.title,
+        content=content,
+        filePaths=page_data.filePaths,
+        importance=page_data.importance,
+        relatedPages=page_data.relatedPages,
+        diagramData=diagram_data if diagram_data else page_data.diagramData,
+    )
+
+    # Update the cache file
+    cached.generated_pages[body.page_id] = updated_page
+
+    cache_path = get_wiki_cache_path(body.owner, body.repo, body.repo_type, body.language)
+    try:
+        cache_dict = cached.model_dump()
+        cache_dict["generated_at"] = datetime.now().isoformat()
+        with open(cache_path, "w", encoding="utf-8") as f:
+            json.dump(cache_dict, f, indent=2)
+        logger.info(f"Cache updated after page regeneration: {cache_path}")
+    except Exception as e:
+        logger.error(f"Failed to update cache after regeneration: {e}")
+
+    return JSONResponse(content={
+        "page": updated_page.model_dump(),
+        "generated_at": datetime.now().isoformat(),
+    })
+
 
 @app.get("/health")
 async def health_check():

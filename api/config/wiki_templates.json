@@ -1,0 +1,55 @@
+{
+  "templates": {
+    "comprehensive": {
+      "id": "comprehensive",
+      "name": "Comprehensive",
+      "description": "Full wiki with architecture, data flow, API docs, and diagrams",
+      "icon": "BookOpen",
+      "prompt_guidance": "",
+      "structure_hint": "Create a structured wiki with sections covering: Overview, System Architecture, Core Features, Data Management/Flow, Frontend Components, Backend Systems, Deployment/Infrastructure, and Extensibility.",
+      "page_count": "8-12",
+      "focus_areas": []
+    },
+    "architecture": {
+      "id": "architecture",
+      "name": "Architecture Guide",
+      "description": "System design, component relationships, design patterns, and trade-offs",
+      "icon": "Layers",
+      "prompt_guidance": "Focus on system architecture, component relationships, design patterns, and technical trade-offs. Prioritize diagrams showing data flow and component interactions. Emphasize how modules connect, what protocols they use, and the reasoning behind architectural decisions.",
+      "structure_hint": "Create a wiki focused on architecture with sections: High-Level Architecture, Component Breakdown, Design Patterns Used, Data Flow & Communication, Dependency Graph, and Trade-offs & Decisions.",
+      "page_count": "6-10",
+      "focus_areas": ["architecture", "design patterns", "system design", "component relationships", "data flow"]
+    },
+    "api-docs": {
+      "id": "api-docs",
+      "name": "API Documentation",
+      "description": "API endpoints, request/response formats, authentication, and error handling",
+      "icon": "Code",
+      "prompt_guidance": "Focus on API documentation: endpoints, request/response schemas, authentication mechanisms, error codes, and rate limiting. Document every public interface, including REST endpoints, WebSocket protocols, GraphQL schemas, and RPC methods. Include example requests and responses.",
+      "structure_hint": "Create a wiki focused on API documentation with sections: API Overview & Base URLs, Authentication & Authorization, REST Endpoints (grouped by resource), WebSocket/Real-time APIs, Error Handling & Status Codes, and SDK/Client Usage.",
+      "page_count": "6-10",
+      "focus_areas": ["api", "endpoints", "routes", "handlers", "controllers", "middleware", "schemas", "serializers"]
+    },
+    "onboarding": {
+      "id": "onboarding",
+      "name": "Onboarding Guide",
+      "description": "Getting started, dev environment setup, key concepts, and contribution guide",
+      "icon": "Rocket",
+      "prompt_guidance": "Write for a developer joining this project for the first time. Focus on getting started quickly, development environment setup, key concepts they need to understand, common development tasks, and how to contribute. Use a friendly, instructional tone. Include step-by-step instructions where possible.",
+      "structure_hint": "Create a wiki for new developers with sections: Quick Start & Prerequisites, Development Environment Setup, Project Structure Walkthrough, Key Concepts & Terminology, Common Development Tasks, Testing & Debugging, and Contribution Guide.",
+      "page_count": "5-8",
+      "focus_areas": ["readme", "setup", "configuration", "package.json", "docker", "makefile", "contributing", "tests"]
+    },
+    "security": {
+      "id": "security",
+      "name": "Security Review",
+      "description": "Threat model, auth flows, data handling, dependency risks, and OWASP considerations",
+      "icon": "Shield",
+      "prompt_guidance": "Analyze this codebase from a security perspective. Cover authentication flows, authorization patterns, data handling and sanitization, input validation, dependency risks, secrets management, and potential vulnerabilities. Reference OWASP Top 10 where applicable. Flag areas that need security attention.",
+      "structure_hint": "Create a security-focused wiki with sections: Security Overview & Threat Model, Authentication & Session Management, Authorization & Access Control, Input Validation & Data Sanitization, Secrets & Configuration Management, Dependency Security, and Security Recommendations.",
+      "page_count": "5-8",
+      "focus_areas": ["auth", "security", "middleware", "validation", "sanitize", "crypto", "password", "token", "session", "cors", "csrf"]
+    }
+  },
+  "default_template": "comprehensive"
+}

@@ -94,6 +94,9 @@ const DARK_THEME = {
   sequenceNumberColor: '#f1f5f9',
 };
 
+// Global counter to ensure unique mermaid render IDs across all instances
+let mermaidIdCounter = 0;
+
 function isDarkMode(): boolean {
   if (typeof document === 'undefined') return false;
   const el = document.documentElement;
@@ -525,9 +528,64 @@ function initializeMermaid(dark: boolean) {
   });
 }
 
+// Track which theme was last initialized to avoid redundant calls
+let lastInitializedTheme: boolean | null = null;
+
+function ensureMermaidInitialized(dark: boolean) {
+  if (lastInitializedTheme !== dark) {
+    initializeMermaid(dark);
+    lastInitializedTheme = dark;
+  }
+}
+
 // Initialize with current theme (deferred to avoid SSR issues)
 if (typeof document !== 'undefined') {
-  initializeMermaid(isDarkMode());
+  ensureMermaidInitialized(isDarkMode());
+}
+
+/**
+ * Clean up common LLM artifacts from mermaid source before rendering.
+ * LLMs often produce slightly malformed output that trips up the parser.
+ */
+function sanitizeMermaidSource(raw: string): string {
+  let s = raw;
+
+  // Strip wrapping backtick fences (```mermaid ... ``` or ``` ... ```)
+  s = s.replace(/^```(?:mermaid)?\s*\n?/i, '').replace(/\n?```\s*$/i, '');
+
+  // Remove a bare "mermaid" keyword on the very first line (LLM prefix)
+  s = s.replace(/^mermaid\s*\n/, '');
+
+  // Decode common HTML entities the LLM may emit
+  s = s.replace(/&gt;/g, '>');
+  s = s.replace(/&lt;/g, '<');
+  s = s.replace(/&amp;/g, '&');
+  s = s.replace(/&quot;/g, '"');
+  s = s.replace(/&#39;/g, "'");
+
+  // Remove zero-width spaces and other invisible unicode
+  s = s.replace(/[\u200B\u200C\u200D\uFEFF]/g, '');
+
+  // Fix unicode arrows that LLMs commonly produce instead of valid mermaid syntax
+  // —→ (em-dash + arrow), --> (fullwidth), → (single arrow), ⟶ (long arrow)
+  s = s.replace(/\u2014\u2192/g, '-->');   // —→ → -->
+  s = s.replace(/\u2192/g, '-->');          // → → -->
+  s = s.replace(/\u27F6/g, '-->');          // ⟶ → -->
+  s = s.replace(/-\u2192/g, '-->');         // -→ → -->
+  s = s.replace(/\u2014>/g, '-->');         // —> → -->
+  // Fix unicode left arrows
+  s = s.replace(/\u2190/g, '<--');          // ← → <--
+  s = s.replace(/\u27F5/g, '<--');          // ⟵ → <--
+  // Fix unicode bidirectional arrows
+  s = s.replace(/\u2194/g, '<-->');         // ↔ → <-->
+  // Fix fancy quotes to regular quotes
+  s = s.replace(/[\u201C\u201D]/g, '"');    // "" → ""
+  s = s.replace(/[\u2018\u2019]/g, "'");    // '' → ''
+  // Fix en-dash and em-dash used as regular dashes in node IDs
+  s = s.replace(/\u2013/g, '-');            // – → -
+  // Don't replace em-dash globally (already handled in arrow combos above)
+
+  return s.trim();
 }
 
 /**
@@ -829,15 +887,13 @@ const FullScreenModal: React.FC<{
   );
 };
 
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
 const Mermaid: React.FC<MermaidProps> = ({ chart, className = '', zoomingEnabled = false, diagramData, onNodeClick, explorerUrl }) => {
   const [svg, setSvg] = useState<string>('');
   const [error, setError] = useState<string | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [themeKey, setThemeKey] = useState(0); // forces re-render on theme change
-  const mermaidRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
-  const idRef = useRef(`mermaid-${Math.random().toString(36).substring(2, 9)}`);
+  const idRef = useRef(`mermaid-${++mermaidIdCounter}-${Math.random().toString(36).substring(2, 9)}`);
   const mouseDownPosRef = useRef<{ x: number; y: number } | null>(null);
   const selectedNodeRef = useRef<string | null>(null);
 
@@ -845,9 +901,11 @@ const Mermaid: React.FC<MermaidProps> = ({ chart, className = '', zoomingEnabled
   useEffect(() => {
     const observer = new MutationObserver(() => {
       const dark = isDarkMode();
-      initializeMermaid(dark);
+      // Force re-initialization on theme change by resetting tracker
+      lastInitializedTheme = null;
+      ensureMermaidInitialized(dark);
       // Generate a new unique ID for re-render (mermaid caches by ID)
-      idRef.current = `mermaid-${Math.random().toString(36).substring(2, 9)}`;
+      idRef.current = `mermaid-${++mermaidIdCounter}-${Math.random().toString(36).substring(2, 9)}`;
       setThemeKey(k => k + 1);
     });
     observer.observe(document.documentElement, {
@@ -930,15 +988,18 @@ const Mermaid: React.FC<MermaidProps> = ({ chart, className = '', zoomingEnabled
   const renderChart = useCallback(async (isMountedRef: { current: boolean }) => {
     if (!chart || !isMountedRef.current) return;
 
+    const sanitized = sanitizeMermaidSource(chart);
+    if (!sanitized) return;
+
     // Ensure mermaid is initialized with current theme before render
     const dark = isDarkMode();
-    initializeMermaid(dark);
+    ensureMermaidInitialized(dark);
 
     try {
       setError(null);
       setSvg('');
 
-      const { svg: renderedSvg } = await mermaid.render(idRef.current, chart);
+      const { svg: renderedSvg } = await mermaid.render(idRef.current, sanitized);
 
       if (!isMountedRef.current) return;
 
@@ -948,17 +1009,8 @@ const Mermaid: React.FC<MermaidProps> = ({ chart, className = '', zoomingEnabled
     } catch (err) {
       console.error('Mermaid rendering error:', err);
 
-      const errorMessage = err instanceof Error ? err.message : String(err);
-
       if (isMountedRef.current) {
-        setError(`Failed to render diagram: ${errorMessage}`);
-
-        if (mermaidRef.current) {
-          mermaidRef.current.innerHTML = `
-            <div class="text-destructive text-xs mb-1 font-medium">Syntax error in diagram</div>
-            <pre class="text-xs overflow-auto p-2 bg-muted rounded border border-border font-mono">${chart}</pre>
-          `;
-        }
+        setError(sanitized);
       }
     }
   }, [chart]);
@@ -975,20 +1027,40 @@ const Mermaid: React.FC<MermaidProps> = ({ chart, className = '', zoomingEnabled
     }
   };
 
+  const handleRetry = useCallback(() => {
+    // Generate a fresh ID to avoid mermaid cache collisions
+    idRef.current = `mermaid-${++mermaidIdCounter}-${Math.random().toString(36).substring(2, 9)}`;
+    // Force re-initialization in case theme state drifted
+    lastInitializedTheme = null;
+    setError(null);
+    setSvg('');
+    setThemeKey(k => k + 1);
+  }, []);
+
   if (error) {
+    // `error` now holds the sanitized mermaid source for display
     return (
       <div className={`border border-destructive/30 rounded-md p-4 bg-destructive/5 ${className}`}>
-        <div className="flex items-center mb-3">
+        <div className="flex items-center justify-between mb-3">
           <div className="text-destructive text-sm font-medium flex items-center">
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-2 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
             </svg>
             Diagram Rendering Error
           </div>
+          <button
+            onClick={handleRetry}
+            className="text-xs px-3 py-1.5 rounded-md border border-border bg-background hover:bg-accent text-foreground transition-colors flex items-center gap-1.5"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            </svg>
+            Retry
+          </button>
         </div>
-        <div ref={mermaidRef} className="text-xs overflow-auto"></div>
+        <pre className="text-xs overflow-auto p-3 bg-muted rounded border border-border font-mono max-h-[300px] whitespace-pre-wrap">{error}</pre>
         <div className="mt-3 text-xs text-muted-foreground">
-          There is a syntax error in the diagram, it cannot be rendered.
+          The diagram source could not be rendered. You can view the raw syntax above.
         </div>
       </div>
     );

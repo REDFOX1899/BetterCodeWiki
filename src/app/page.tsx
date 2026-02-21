@@ -113,6 +113,7 @@ export default function Home() {
           setExcludedFiles(config.excludedFiles || '');
           setIncludedDirs(config.includedDirs || '');
           setIncludedFiles(config.includedFiles || '');
+          setSelectedTemplate(config.selectedTemplate || 'comprehensive');
         }
       }
     } catch (error) {
@@ -164,6 +165,9 @@ export default function Home() {
 
   // Wiki type state - default to comprehensive view
   const [isComprehensiveView, setIsComprehensiveView] = useState<boolean>(true);
+
+  // Wiki template state
+  const [selectedTemplate, setSelectedTemplate] = useState<string>('comprehensive');
 
   const [excludedDirs, setExcludedDirs] = useState('');
   const [excludedFiles, setExcludedFiles] = useState('');
@@ -360,6 +364,7 @@ export default function Home() {
         const configToSave = {
           selectedLanguage,
           isComprehensiveView,
+          selectedTemplate,
           provider,
           model,
           isCustomModel,
@@ -429,10 +434,17 @@ export default function Home() {
     // Add comprehensive parameter
     params.append('comprehensive', isComprehensiveView.toString());
 
+    // Add template parameter
+    if (selectedTemplate && selectedTemplate !== 'comprehensive') {
+      params.append('template', selectedTemplate);
+    }
+
     const queryString = params.toString() ? `?${params.toString()}` : '';
 
-    // Navigate to the dynamic route
-    router.push(`/${owner}/${repo}${queryString}`);
+    // Navigate using clean URL pattern: /github/owner/repo or /owner/repo for local
+    const effectiveType = (type === 'local' ? type : selectedPlatform) || 'github';
+    const basePath = effectiveType !== 'local' ? `/${effectiveType}/${owner}/${repo}` : `/${owner}/${repo}`;
+    router.push(`${basePath}${queryString}`);
 
     // The isSubmitting state will be reset when the component unmounts during navigation
   };
@@ -515,6 +527,8 @@ export default function Home() {
           supportedLanguages={supportedLanguages}
           isComprehensiveView={isComprehensiveView}
           setIsComprehensiveView={setIsComprehensiveView}
+          selectedTemplate={selectedTemplate}
+          setSelectedTemplate={setSelectedTemplate}
           provider={provider}
           setProvider={setProvider}
           model={model}

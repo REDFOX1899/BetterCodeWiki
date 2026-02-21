@@ -17,21 +17,18 @@ const nextConfig: NextConfig = {
         fs: false,
       };
     }
-    // Optimize bundle size
-    config.optimization = {
-      ...config.optimization,
-      splitChunks: {
-        chunks: 'all',
-        cacheGroups: {
-          vendor: {
-            test: /[\\/]node_modules[\\/]/,
-            name: 'vendors',
-            chunks: 'all',
-          },
-        },
-      },
-    };
     return config;
+  },
+  async headers() {
+    return [
+      {
+        source: '/embed/:path*',
+        headers: [
+          { key: 'X-Frame-Options', value: 'ALLOWALL' },
+          { key: 'Content-Security-Policy', value: 'frame-ancestors *' },
+        ],
+      },
+    ];
   },
   async rewrites() {
     return [
@@ -62,6 +59,14 @@ const nextConfig: NextConfig = {
       {
         source: '/api/lang/config',
         destination: `${TARGET_SERVER_BASE_URL}/lang/config`,
+      },
+      {
+        source: '/api/wiki/regenerate_page',
+        destination: `${TARGET_SERVER_BASE_URL}/api/wiki/regenerate_page`,
+      },
+      {
+        source: '/api/wiki_templates',
+        destination: `${TARGET_SERVER_BASE_URL}/api/wiki_templates`,
       },
     ];
   },
