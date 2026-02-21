@@ -578,14 +578,16 @@ interface MermaidProps {
   zoomingEnabled?: boolean;
 }
 
-// Full screen modal component for the diagram
+// Full screen modal component for the diagram with svg-pan-zoom
 const FullScreenModal: React.FC<{
   isOpen: boolean;
   onClose: () => void;
-  children: React.ReactNode;
-}> = ({ isOpen, onClose, children }) => {
+  svgHtml: string;
+}> = ({ isOpen, onClose, svgHtml }) => {
   const modalRef = useRef<HTMLDivElement>(null);
-  const [zoom, setZoom] = useState(1);
+  const svgContainerRef = useRef<HTMLDivElement>(null);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const panZoomRef = useRef<any>(null);
 
   // Close on Escape key
   useEffect(() => {
@@ -621,12 +623,47 @@ const FullScreenModal: React.FC<{
     };
   }, [isOpen, onClose]);
 
-  // Reset zoom when modal opens
+  // Initialize svg-pan-zoom in the modal
   useEffect(() => {
-    if (isOpen) {
-      setZoom(1);
-    }
-  }, [isOpen]);
+    if (!isOpen || !svgContainerRef.current) return;
+
+    const initPanZoom = async () => {
+      const svgElement = svgContainerRef.current?.querySelector('svg');
+      if (!svgElement) return;
+
+      svgElement.style.maxWidth = 'none';
+      svgElement.style.width = '100%';
+      svgElement.style.height = '100%';
+
+      try {
+        const svgPanZoom = (await import('svg-pan-zoom')).default;
+        panZoomRef.current = svgPanZoom(svgElement, {
+          zoomEnabled: true,
+          controlIconsEnabled: true,
+          fit: true,
+          center: true,
+          minZoom: 0.1,
+          maxZoom: 10,
+          zoomScaleSensitivity: 0.3,
+        });
+      } catch (error) {
+        console.error('Failed to load svg-pan-zoom in modal:', error);
+      }
+    };
+
+    setTimeout(() => { void initPanZoom(); }, 200);
+
+    return () => {
+      if (panZoomRef.current) {
+        try { panZoomRef.current.destroy(); } catch { /* ignore */ }
+        panZoomRef.current = null;
+      }
+    };
+  }, [isOpen, svgHtml]);
+
+  const handleZoomIn = () => { panZoomRef.current?.zoomIn(); };
+  const handleZoomOut = () => { panZoomRef.current?.zoomOut(); };
+  const handleReset = () => { panZoomRef.current?.resetZoom(); panZoomRef.current?.resetPan(); panZoomRef.current?.fit(); panZoomRef.current?.center(); };
 
   if (!isOpen) return null;
 
@@ -634,48 +671,56 @@ const FullScreenModal: React.FC<{
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm p-4">
       <div
         ref={modalRef}
-        className="bg-card border border-border rounded-lg shadow-lg max-w-5xl max-h-[90vh] w-full overflow-hidden flex flex-col"
+        className="bg-card border border-border rounded-lg shadow-lg max-w-6xl max-h-[92vh] w-full overflow-hidden flex flex-col"
       >
         {/* Modal header with controls */}
         <div className="flex items-center justify-between p-4 border-b border-border bg-muted/40">
-          <div className="font-semibold text-foreground">Diagram View</div>
-          <div className="flex items-center gap-4">
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => setZoom(Math.max(0.5, zoom - 0.1))}
-                className="text-foreground hover:bg-accent hover:text-accent-foreground p-2 rounded-md border border-input transition-colors bg-background"
-                aria-label="Zoom out"
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <circle cx="11" cy="11" r="8"></circle>
-                  <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
-                  <line x1="8" y1="11" x2="14" y2="11"></line>
-                </svg>
-              </button>
-              <span className="text-sm text-muted-foreground w-12 text-center">{Math.round(zoom * 100)}%</span>
-              <button
-                onClick={() => setZoom(Math.min(2, zoom + 0.1))}
-                className="text-foreground hover:bg-accent hover:text-accent-foreground p-2 rounded-md border border-input transition-colors bg-background"
-                aria-label="Zoom in"
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <circle cx="11" cy="11" r="8"></circle>
-                  <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
-                  <line x1="11" y1="8" x2="11" y2="14"></line>
-                  <line x1="8" y1="11" x2="14" y2="11"></line>
-                </svg>
-              </button>
-              <button
-                onClick={() => setZoom(1)}
-                className="text-foreground hover:bg-accent hover:text-accent-foreground p-2 rounded-md border border-input transition-colors bg-background"
-                aria-label="Reset zoom"
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"></path>
-                  <path d="M21 3v5h-5"></path>
-                </svg>
-              </button>
-            </div>
+          <div className="font-semibold text-foreground flex items-center gap-2">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+              <line x1="3" y1="9" x2="21" y2="9"></line>
+              <line x1="9" y1="21" x2="9" y2="9"></line>
+            </svg>
+            Diagram View
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-muted-foreground mr-2">Scroll to zoom, drag to pan</span>
+            <button
+              onClick={handleZoomOut}
+              className="text-foreground hover:bg-accent hover:text-accent-foreground p-2 rounded-md border border-input transition-colors bg-background"
+              aria-label="Zoom out"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="11" cy="11" r="8"></circle>
+                <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                <line x1="8" y1="11" x2="14" y2="11"></line>
+              </svg>
+            </button>
+            <button
+              onClick={handleZoomIn}
+              className="text-foreground hover:bg-accent hover:text-accent-foreground p-2 rounded-md border border-input transition-colors bg-background"
+              aria-label="Zoom in"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="11" cy="11" r="8"></circle>
+                <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                <line x1="11" y1="8" x2="11" y2="14"></line>
+                <line x1="8" y1="11" x2="14" y2="11"></line>
+              </svg>
+            </button>
+            <button
+              onClick={handleReset}
+              className="text-foreground hover:bg-accent hover:text-accent-foreground p-2 rounded-md border border-input transition-colors bg-background"
+              aria-label="Fit to view"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M8 3H5a2 2 0 0 0-2 2v3"></path>
+                <path d="M21 8V5a2 2 0 0 0-2-2h-3"></path>
+                <path d="M3 16v3a2 2 0 0 0 2 2h3"></path>
+                <path d="M16 21h3a2 2 0 0 0 2-2v-3"></path>
+              </svg>
+            </button>
+            <div className="w-px h-6 bg-border mx-1"></div>
             <button
               onClick={onClose}
               className="text-muted-foreground hover:text-foreground hover:bg-accent p-2 rounded-md transition-colors"
@@ -689,18 +734,13 @@ const FullScreenModal: React.FC<{
           </div>
         </div>
 
-        {/* Modal content with zoom */}
-        <div className="overflow-auto p-6 flex-1 flex items-center justify-center bg-background">
-          <div
-            style={{
-              transform: `scale(${zoom})`,
-              transformOrigin: 'center center',
-              transition: 'transform 0.3s ease-out'
-            }}
-          >
-            {children}
-          </div>
-        </div>
+        {/* Modal content with svg-pan-zoom */}
+        <div
+          ref={svgContainerRef}
+          className="flex-1 bg-background mermaid-diagram-container"
+          style={{ minHeight: '500px' }}
+          dangerouslySetInnerHTML={{ __html: svgHtml }}
+        />
       </div>
     </div>
   );
@@ -731,10 +771,19 @@ const Mermaid: React.FC<MermaidProps> = ({ chart, className = '', zoomingEnabled
     return () => observer.disconnect();
   }, []);
 
-  // Initialize pan-zoom functionality when SVG is rendered
+  // Initialize pan-zoom functionality when SVG is rendered or modal closes
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const inlinePanZoomRef = useRef<any>(null);
+
   useEffect(() => {
-    if (svg && zoomingEnabled && containerRef.current) {
+    if (svg && zoomingEnabled && containerRef.current && !isFullscreen) {
       const initializePanZoom = async () => {
+        // Destroy previous instance if it exists
+        if (inlinePanZoomRef.current) {
+          try { inlinePanZoomRef.current.destroy(); } catch { /* ignore */ }
+          inlinePanZoomRef.current = null;
+        }
+
         const svgElement = containerRef.current?.querySelector("svg");
         if (svgElement) {
           // Remove any max-width constraints but keep height responsive
@@ -747,7 +796,7 @@ const Mermaid: React.FC<MermaidProps> = ({ chart, className = '', zoomingEnabled
             // Dynamically import svg-pan-zoom only when needed in the browser
             const svgPanZoom = (await import("svg-pan-zoom")).default;
 
-            svgPanZoom(svgElement, {
+            inlinePanZoomRef.current = svgPanZoom(svgElement, {
               zoomEnabled: true,
               controlIconsEnabled: true,
               fit: true,
@@ -767,7 +816,14 @@ const Mermaid: React.FC<MermaidProps> = ({ chart, className = '', zoomingEnabled
         void initializePanZoom();
       }, 150);
     }
-  }, [svg, zoomingEnabled]);
+
+    return () => {
+      if (inlinePanZoomRef.current) {
+        try { inlinePanZoomRef.current.destroy(); } catch { /* ignore */ }
+        inlinePanZoomRef.current = null;
+      }
+    };
+  }, [svg, zoomingEnabled, isFullscreen]);
 
   const renderChart = useCallback(async (isMountedRef: { current: boolean }) => {
     if (!chart || !isMountedRef.current) return;
@@ -885,9 +941,8 @@ const Mermaid: React.FC<MermaidProps> = ({ chart, className = '', zoomingEnabled
       <FullScreenModal
         isOpen={isFullscreen}
         onClose={() => setIsFullscreen(false)}
-      >
-        <div className="mermaid-diagram-container" dangerouslySetInnerHTML={{ __html: svg }} />
-      </FullScreenModal>
+        svgHtml={svg}
+      />
     </>
   );
 };
