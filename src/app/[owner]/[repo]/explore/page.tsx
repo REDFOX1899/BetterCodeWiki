@@ -122,9 +122,8 @@ export default function ExplorePage() {
   const mergedDiagram = useMemo<DiagramData | null>(() => {
     if (allDiagrams.length === 0) return null;
 
-    // For now merge all diagrams. In future, filter by view type.
     const mergedNodes = new Map<string, DiagramData['nodes'][0]>();
-    const mergedEdges: DiagramData['edges'] = [];
+    const allEdges: DiagramData['edges'] = [];
     const edgeKeys = new Set<string>();
 
     for (const diagram of allDiagrams) {
@@ -137,18 +136,47 @@ export default function ExplorePage() {
         const key = `${edge.source}->${edge.target}:${edge.type}`;
         if (!edgeKeys.has(key)) {
           edgeKeys.add(key);
-          mergedEdges.push(edge);
+          allEdges.push(edge);
         }
       }
     }
 
+    // Filter edges based on selected view
+    let filteredEdges: DiagramData['edges'];
+    switch (selectedView) {
+      case 'dataflow':
+        filteredEdges = allEdges.filter((e) => e.type === 'data_flow');
+        break;
+      case 'dependencies':
+        filteredEdges = allEdges.filter((e) => e.type === 'dependency' || e.type === 'api_call');
+        break;
+      default: // architecture — show everything
+        filteredEdges = allEdges;
+        break;
+    }
+
+    // For filtered views, prune orphan nodes (keep connected + depth-0 for context)
+    let finalNodes: DiagramData['nodes'][0][];
+    if (selectedView !== 'architecture') {
+      const connectedIds = new Set<string>();
+      for (const edge of filteredEdges) {
+        connectedIds.add(edge.source);
+        connectedIds.add(edge.target);
+      }
+      finalNodes = Array.from(mergedNodes.values()).filter(
+        (n) => connectedIds.has(n.id) || n.depth === 0,
+      );
+    } else {
+      finalNodes = Array.from(mergedNodes.values());
+    }
+
     return {
-      nodes: Array.from(mergedNodes.values()),
-      edges: mergedEdges,
+      nodes: finalNodes,
+      edges: filteredEdges,
       mermaidSource: allDiagrams[0]?.mermaidSource ?? '',
       diagramType: allDiagrams[0]?.diagramType ?? 'flowchart',
     };
-  }, [allDiagrams]);
+  }, [allDiagrams, selectedView]);
 
   // Look up the selected node info for the detail panel
   const selectedNodeInfo = useMemo(() => {
@@ -290,9 +318,9 @@ export default function ExplorePage() {
       <div className="shrink-0 flex items-center justify-center px-4 py-2 border-t border-gray-200 dark:border-zinc-800 bg-white dark:bg-zinc-900">
         <div className="flex items-center gap-1 bg-gray-100 dark:bg-zinc-800 rounded-lg p-0.5">
           {[
-            { depth: 0, label: 'Overview' },
-            { depth: 1, label: 'Detailed' },
-            { depth: 2, label: 'Full' },
+            { depth: 1, label: 'Overview' },
+            { depth: 3, label: 'Detailed' },
+            { depth: Infinity, label: 'Full' },
           ].map(({ depth, label }) => (
             <button
               key={depth}

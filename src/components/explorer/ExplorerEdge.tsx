@@ -1,6 +1,6 @@
 'use client';
 
-import React, { memo } from 'react';
+import React, { memo, useState } from 'react';
 import {
   BaseEdge,
   EdgeLabelRenderer,
@@ -16,10 +16,13 @@ function ExplorerEdgeComponent({
   targetY,
   sourcePosition,
   targetPosition,
-  label,
   style,
   animated,
+  data,
 }: EdgeProps) {
+  const [hovered, setHovered] = useState(false);
+  const label = (data as Record<string, unknown> | undefined)?.label as string | undefined;
+
   const [edgePath, labelX, labelY] = getBezierPath({
     sourceX,
     sourceY,
@@ -29,20 +32,35 @@ function ExplorerEdgeComponent({
     targetPosition,
   });
 
+  const edgeStyle = hovered
+    ? { ...style, strokeWidth: 2.5 }
+    : style;
+
   return (
     <>
+      {/* Invisible wider path for easier hover targeting */}
+      <path
+        d={edgePath}
+        fill="none"
+        stroke="transparent"
+        strokeWidth={20}
+        onMouseEnter={() => setHovered(true)}
+        onMouseLeave={() => setHovered(false)}
+      />
       <BaseEdge
         id={id}
         path={edgePath}
-        style={style}
+        style={edgeStyle}
         className={animated ? 'react-flow__edge-path animated' : ''}
       />
-      {label && (
+      {label && hovered && (
         <EdgeLabelRenderer>
           <div
-            className="absolute text-[10px] font-medium text-gray-500 dark:text-gray-400 bg-white dark:bg-zinc-900 px-1.5 py-0.5 rounded border border-gray-200 dark:border-zinc-700 pointer-events-none"
+            className="absolute text-[10px] font-medium text-gray-700 dark:text-gray-200 bg-white dark:bg-zinc-800 px-2 py-1 rounded-md border border-gray-200 dark:border-zinc-600 shadow-lg"
             style={{
               transform: `translate(-50%, -50%) translate(${labelX}px,${labelY}px)`,
+              zIndex: 1000,
+              pointerEvents: 'none',
             }}
           >
             {label}

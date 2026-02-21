@@ -72,7 +72,7 @@ export function diagramDataToReactFlow(
   data: DiagramData,
   options?: ConvertOptions,
 ): { nodes: Node[]; edges: Edge[] } {
-  const maxDepth = options?.maxDepth ?? 2;
+  const maxDepth = options?.maxDepth ?? Infinity;
 
   // 1. Filter nodes by depth
   const filteredNodes = data.nodes.filter((n) => n.depth <= maxDepth);
@@ -103,10 +103,9 @@ export function diagramDataToReactFlow(
         source: e.source,
         target: e.target,
         type: 'explorer',
-        label: e.label ?? undefined,
         animated: style.animated,
         style: { stroke: style.stroke, strokeWidth: 1.5 },
-        data: { edgeType: e.type },
+        data: { edgeType: e.type, label: e.label ?? undefined },
       };
     });
 
