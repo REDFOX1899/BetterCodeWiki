@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useRef, useState, useEffect, useCallback } from 'react';
 import dynamic from 'next/dynamic';
 import { motion } from 'framer-motion';
 import { Environment } from '@react-three/drei';
@@ -21,7 +21,7 @@ interface Hero3DProps {
 }
 
 export default function Hero3D({ onSubmit, value, onChange, isSubmitting }: Hero3DProps) {
-  const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 });
+  const mousePositionRef = useRef({ x: 0, y: 0 });
   const [isMobile, setIsMobile] = useState(false);
   const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
 
@@ -45,10 +45,9 @@ export default function Hero3D({ onSubmit, value, onChange, isSubmitting }: Hero
 
   const handleMouseMove = useCallback((e: React.MouseEvent<HTMLElement>) => {
     if (prefersReducedMotion) return;
-    // Normalize mouse position to -1 to 1
-    const x = (e.clientX / window.innerWidth) * 2 - 1;
-    const y = -(e.clientY / window.innerHeight) * 2 + 1;
-    setMousePosition({ x, y });
+    // Normalize mouse position to -1 to 1 — written to ref to avoid React re-renders
+    mousePositionRef.current.x = (e.clientX / window.innerWidth) * 2 - 1;
+    mousePositionRef.current.y = -(e.clientY / window.innerHeight) * 2 + 1;
   }, [prefersReducedMotion]);
 
   const animationProps = prefersReducedMotion
@@ -70,7 +69,7 @@ export default function Hero3D({ onSubmit, value, onChange, isSubmitting }: Hero
           >
             <ambientLight intensity={0.5} />
             <pointLight position={[10, 10, 10]} intensity={0.8} />
-            <KnowledgeCube mouse={mousePosition} />
+            <KnowledgeCube mouseRef={mousePositionRef} />
             <ParticleField />
             <Environment preset="city" />
           </Canvas>

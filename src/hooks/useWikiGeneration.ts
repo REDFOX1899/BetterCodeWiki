@@ -64,6 +64,18 @@ interface UseWikiGenerationReturn {
   isRegenerating: string | null;
 }
 
+const CONCURRENCY_BY_PROVIDER: Record<string, number> = {
+  'google': 5,      // Flash 2.5 is fast with high rate limits
+  'openai': 3,      // GPT models have moderate rate limits
+  'openrouter': 2,  // Rate limits vary
+  'ollama': 1,      // Local models are CPU/GPU bound
+  'bedrock': 3,
+  'azure': 3,
+  'dashscope': 2,
+};
+
+const DEFAULT_CONCURRENCY = 3;
+
 export function useWikiGeneration(params: UseWikiGenerationParams): UseWikiGenerationReturn {
   const {
     effectiveRepoInfo,
@@ -96,6 +108,10 @@ export function useWikiGeneration(params: UseWikiGenerationParams): UseWikiGener
   const [structureRequestInProgress, setStructureRequestInProgress] = useState(false);
   const [isRegenerating, setIsRegenerating] = useState<string | null>(null);
 
+  // Ref to track generatedPages without causing callback re-creation
+  const generatedPagesRef = useRef(generatedPages);
+  useEffect(() => { generatedPagesRef.current = generatedPages; }, [generatedPages]);
+
   // Template configuration loaded from backend
   const templateConfigRef = useRef<TemplateConfig | null>(null);
 
@@ -125,7 +141,7 @@ export function useWikiGeneration(params: UseWikiGenerationParams): UseWikiGener
   const generatePageContent = useCallback(async (page: WikiPage, owner: string, repo: string) => {
     return new Promise<void>(async (resolve) => {
       try {
-        if (generatedPages[page.id]?.content) {
+        if (generatedPagesRef.current[page.id]?.content) {
           resolve();
           return;
         }
@@ -403,7 +419,7 @@ Remember:
         setLoadingMessage(undefined);
       }
     });
-  }, [generatedPages, currentToken, effectiveRepoInfo, selectedProviderState, selectedModelState, isCustomSelectedModelState, customSelectedModelState, modelExcludedDirs, modelExcludedFiles, language, activeContentRequests, generateFileUrl, modelIncludedDirs, modelIncludedFiles, setError, setLoadingMessage]);
+  }, [currentToken, effectiveRepoInfo, selectedProviderState, selectedModelState, isCustomSelectedModelState, customSelectedModelState, modelExcludedDirs, modelExcludedFiles, language, activeContentRequests, generateFileUrl, modelIncludedDirs, modelIncludedFiles, setError, setLoadingMessage]);
 
   // Determine the wiki structure from repository data
   const determineWikiStructure = useCallback(async (fileTree: string, readme: string, owner: string, repo: string) => {
@@ -940,16 +956,16 @@ IMPORTANT:
         setGenerationPhase('generating');
         console.log(`Starting generation for ${pages.length} pages with controlled concurrency`);
 
-        const MAX_CONCURRENT = 3;
+        const maxConcurrent = CONCURRENCY_BY_PROVIDER[selectedProviderState] || DEFAULT_CONCURRENCY;
         const queue = [...pages];
         let activeRequests = 0;
 
         const processQueue = () => {
-          while (queue.length > 0 && activeRequests < MAX_CONCURRENT) {
+          while (queue.length > 0 && activeRequests < maxConcurrent) {
             const page = queue.shift();
             if (page) {
               activeRequests++;
-              console.log(`Starting page ${page.title} (${activeRequests} active, ${queue.length} remaining)`);
+              console.log(`Starting page ${page.title} (${activeRequests} active, ${queue.length} remaining, concurrency=${maxConcurrent})`);
 
               generatePageContent(page, owner, repo)
                 .finally(() => {
@@ -962,7 +978,7 @@ IMPORTANT:
                     setIsLoading(false);
                     setLoadingMessage(undefined);
                   } else {
-                    if (queue.length > 0 && activeRequests < MAX_CONCURRENT) {
+                    if (queue.length > 0 && activeRequests < maxConcurrent) {
                       processQueue();
                     }
                   }

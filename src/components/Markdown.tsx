@@ -88,8 +88,8 @@ const Markdown: React.FC<MarkdownProps> = ({ content, onDiagramNodeClick }) => {
   // Extract and strip diagram data markers from content
   const { cleanContent, diagramDataMap } = useMemo(() => extractDiagramData(content), [content]);
 
-  // Define markdown components
-  const MarkdownComponents: React.ComponentProps<typeof ReactMarkdown>['components'] = {
+  // Define markdown components — memoized to prevent ReactMarkdown full re-renders
+  const MarkdownComponents: React.ComponentProps<typeof ReactMarkdown>['components'] = useMemo(() => ({
     p({ children, ...props }: { children?: React.ReactNode }) {
       return <p className="mb-4 text-base leading-7 text-foreground" {...props}>{children}</p>;
     },
@@ -261,7 +261,7 @@ const Markdown: React.FC<MarkdownProps> = ({ content, onDiagramNodeClick }) => {
         </code>
       );
     },
-  };
+  }), [diagramDataMap, onDiagramNodeClick, explorerUrl]);
 
   return (
     <div className="prose prose-base dark:prose-invert max-w-none px-2 py-4">

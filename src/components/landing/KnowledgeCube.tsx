@@ -1,19 +1,20 @@
 'use client';
 
-import { useRef } from 'react';
+import React, { useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { Float, Edges, MeshTransmissionMaterial } from '@react-three/drei';
 import * as THREE from 'three';
 
 interface KnowledgeCubeProps {
-  mouse: { x: number; y: number };
+  mouseRef: React.RefObject<{ x: number; y: number }>;
 }
 
-export default function KnowledgeCube({ mouse }: KnowledgeCubeProps) {
+export default function KnowledgeCube({ mouseRef }: KnowledgeCubeProps) {
   const meshRef = useRef<THREE.Mesh>(null);
 
   useFrame(() => {
     if (!meshRef.current) return;
+    const mouse = mouseRef.current;
 
     // Continuous Y rotation
     meshRef.current.rotation.y += 0.003;
