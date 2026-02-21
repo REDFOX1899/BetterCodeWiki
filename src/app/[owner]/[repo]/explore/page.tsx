@@ -53,6 +53,7 @@ export default function ExplorePage() {
   const owner = params.owner as string;
   const repo = params.repo as string;
   const repoType = (searchParams.get('type') || 'github') as 'github' | 'gitlab' | 'bitbucket';
+  const language = searchParams.get('language') || 'en';
 
   // State from URL or defaults
   const [selectedView, setSelectedView] = useState<ExplorerView>(
@@ -80,6 +81,7 @@ export default function ExplorePage() {
           owner,
           repo,
           repo_type: repoType,
+          language,
         });
         const response = await fetch(`/api/wiki_cache?${cacheParams.toString()}`);
         if (!response.ok) {
@@ -114,7 +116,7 @@ export default function ExplorePage() {
     }
 
     fetchWikiData();
-  }, [owner, repo, repoType]);
+  }, [owner, repo, repoType, language]);
 
   // Merge all diagram data for the selected view into one DiagramData
   const mergedDiagram = useMemo<DiagramData | null>(() => {
@@ -176,8 +178,11 @@ export default function ExplorePage() {
     setSelectedDepth(depth);
   }, []);
 
-  // Build back link
-  const backHref = `/${owner}/${repo}${searchParams.get('type') ? `?type=${repoType}` : ''}`;
+  // Build back link (preserve type and language params)
+  const backParams = new URLSearchParams();
+  if (searchParams.get('type')) backParams.set('type', repoType);
+  if (searchParams.get('language')) backParams.set('language', language);
+  const backHref = `/${owner}/${repo}${backParams.toString() ? `?${backParams.toString()}` : ''}`;
 
   // No diagram data state
   const hasNoDiagramData = !isLoading && !error && allDiagrams.length === 0;

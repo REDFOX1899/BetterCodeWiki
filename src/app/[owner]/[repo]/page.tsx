@@ -641,6 +641,24 @@ Based ONLY on the content of the \`[RELEVANT_SOURCE_FILES]\`:
          - Use autonumber directive to add sequence numbers to messages
          - NEVER use flowchart-style labels like A--|label|-->B. Always use a colon for labels: A->>B: My Label
 
+    *   **Structured Diagram Data:** When you generate a Mermaid diagram, you MUST ALSO produce a structured JSON block IMMEDIATELY BEFORE the corresponding Mermaid code fence. Wrap the JSON in HTML comment markers exactly like this:
+        \`\`\`
+        <!-- DIAGRAM_DATA_START -->
+        {
+          "nodes": [
+            {"id": "A", "label": "Frontend App", "technology": "React", "files": ["src/App.tsx"], "description": "Main SPA entry point", "depth": 0},
+            {"id": "B", "label": "API Server", "technology": "Express", "files": ["server/index.js"], "description": "REST API backend", "depth": 0}
+          ],
+          "edges": [
+            {"source": "A", "target": "B", "label": "HTTP requests", "type": "api_call"}
+          ],
+          "mermaidSource": "graph TD\\n    A[Frontend App] --> B[API Server]",
+          "diagramType": "flowchart"
+        }
+        <!-- DIAGRAM_DATA_END -->
+        \`\`\`
+        Rules: "nodes[].id" must match the Mermaid node IDs. "edges[].type" must be "dependency", "data_flow", or "api_call". "diagramType" must be "flowchart", "sequence", "class", or "er". "mermaidSource" must contain the exact Mermaid source. If a diagram has no meaningful structured metadata, you may omit the JSON block.
+
 4.  **Tables:**
     *   Use Markdown tables to summarize information such as:
         *   Key features or components and their descriptions.
@@ -2175,6 +2193,19 @@ IMPORTANT:
                     <FaProjectDiagram className="h-3.5 w-3.5" />
                     <span className="hidden sm:inline">Graph</span>
                   </button>
+                )}
+                {/* Visual Explorer button */}
+                {!isLoading && wikiStructure && (
+                  <Link
+                    href={`/${owner}/${repo}/explore${repoType !== 'github' ? `?type=${repoType}` : ''}${language !== 'en' ? `${repoType !== 'github' ? '&' : '?'}language=${language}` : ''}`}
+                    className="inline-flex items-center gap-2 rounded-md border border-input bg-background px-3 py-1.5 text-sm text-muted-foreground shadow-sm transition-colors hover:bg-accent hover:text-accent-foreground"
+                    title="Interactive Visual Explorer"
+                  >
+                    <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6A2.25 2.25 0 016 3.75h2.25A2.25 2.25 0 0110.5 6v2.25a2.25 2.25 0 01-2.25 2.25H6a2.25 2.25 0 01-2.25-2.25V6zM3.75 15.75A2.25 2.25 0 016 13.5h2.25a2.25 2.25 0 012.25 2.25V18a2.25 2.25 0 01-2.25 2.25H6A2.25 2.25 0 013.75 18v-2.25zM13.5 6a2.25 2.25 0 012.25-2.25H18A2.25 2.25 0 0120.25 6v2.25A2.25 2.25 0 0118 10.5h-2.25a2.25 2.25 0 01-2.25-2.25V6zM13.5 15.75a2.25 2.25 0 012.25-2.25H18a2.25 2.25 0 012.25 2.25V18A2.25 2.25 0 0118 20.25h-2.25A2.25 2.25 0 0113.5 18v-2.25z" />
+                    </svg>
+                    <span className="hidden sm:inline">Explore</span>
+                  </Link>
                 )}
                 {/* Reading mode toggle button */}
                 {!isLoading && wikiStructure && (
