@@ -24,6 +24,22 @@ logger = logging.getLogger(__name__)
 # Maximum token limit for OpenAI embedding models
 MAX_EMBEDDING_TOKENS = 8192
 
+# Cached tiktoken encoders to avoid re-creating on every count_tokens call
+_tiktoken_encoder_cache = {}
+
+def _get_encoder(model_name=None):
+    """Get or create a cached tiktoken encoder."""
+    key = model_name or "default"
+    if key not in _tiktoken_encoder_cache:
+        if model_name:
+            try:
+                _tiktoken_encoder_cache[key] = tiktoken.encoding_for_model(model_name)
+            except KeyError:
+                _tiktoken_encoder_cache[key] = tiktoken.get_encoding("cl100k_base")
+        else:
+            _tiktoken_encoder_cache[key] = tiktoken.get_encoding("cl100k_base")
+    return _tiktoken_encoder_cache[key]
+
 def count_tokens(text: str, embedder_type: str = None, is_ollama_embedder: bool = None) -> int:
     """
     Count the number of tokens in a text string using tiktoken.
@@ -42,25 +58,25 @@ def count_tokens(text: str, embedder_type: str = None, is_ollama_embedder: bool 
         # Handle backward compatibility
         if embedder_type is None and is_ollama_embedder is not None:
             embedder_type = 'ollama' if is_ollama_embedder else None
-        
+
         # Determine embedder type if not specified
         if embedder_type is None:
             from api.config import get_embedder_type
             embedder_type = get_embedder_type()
 
-        # Choose encoding based on embedder type
+        # Choose encoding based on embedder type (using cached encoders)
         if embedder_type == 'ollama':
             # Ollama typically uses cl100k_base encoding
-            encoding = tiktoken.get_encoding("cl100k_base")
+            encoding = _get_encoder()
         elif embedder_type == 'google':
             # Google uses similar tokenization to GPT models for rough estimation
-            encoding = tiktoken.get_encoding("cl100k_base")
+            encoding = _get_encoder()
         elif embedder_type == 'bedrock':
             # Bedrock embedding models vary; use a common GPT-like encoding for rough estimation
-            encoding = tiktoken.get_encoding("cl100k_base")
+            encoding = _get_encoder()
         else:  # OpenAI or default
             # Use OpenAI embedding model encoding
-            encoding = tiktoken.encoding_for_model("text-embedding-3-small")
+            encoding = _get_encoder("text-embedding-3-small")
 
         return len(encoding.encode(text))
     except Exception as e:
@@ -68,6 +84,67 @@ def count_tokens(text: str, embedder_type: str = None, is_ollama_embedder: bool 
         logger.warning(f"Error counting tokens with tiktoken: {e}")
         # Rough approximation: 4 characters per token
         return len(text) // 4
+
+# --- Large repo optimization constants ---
+
+# Additional directories to exclude for large repos (merged with DEFAULT_EXCLUDED_DIRS)
+ADDITIONAL_EXCLUDED_DIRS = {
+    'vendor', 'third_party', 'external', 'deps',
+    '.next', '.nuxt', '.svelte-kit', '.output',
+    'generated', 'auto_generated', 'codegen',
+    'fixtures', 'testdata', '__snapshots__',
+    'migrations', 'dist', 'build', 'out',
+    '.cache', '.tmp', '.temp',
+    'coverage', '.nyc_output',
+    'bower_components', 'jspm_packages',
+}
+
+# File size limits — skip oversized files that are unlikely to be useful
+MAX_CODE_FILE_SIZE = 100_000   # 100KB - skip very large source files
+MAX_DOC_FILE_SIZE = 50_000     # 50KB - skip very large docs
+
+# Total ingestion token budget — stop reading files once this is exhausted
+MAX_TOTAL_INGESTION_TOKENS = 2_000_000  # 2M token budget
+
+
+def _is_binary(file_path: str) -> bool:
+    """Check if file appears to be binary by looking for null bytes."""
+    try:
+        with open(file_path, 'rb') as f:
+            chunk = f.read(512)
+            return b'\x00' in chunk
+    except (IOError, OSError):
+        return True
+
+
+def _file_priority(file_path: str) -> int:
+    """
+    Assign a priority score to a file path for processing order.
+    Lower number = higher priority.
+    """
+    name = os.path.basename(file_path).lower()
+    rel_path = file_path.lower()
+
+    # Root docs are highest priority
+    if name in ('readme.md', 'readme.rst', 'readme.txt', 'readme'):
+        return 0
+    if name in ('contributing.md', 'architecture.md', 'changelog.md'):
+        return 1
+    # Config files
+    if name in ('package.json', 'cargo.toml', 'pyproject.toml', 'go.mod',
+                 'pom.xml', 'build.gradle'):
+        return 2
+    # Source directories
+    if any(d in rel_path for d in ('/src/', '/lib/', '/app/', '/api/', '/pkg/', '/internal/')):
+        return 3
+    # Documentation
+    if any(d in rel_path for d in ('/docs/', '/doc/', '/documentation/')):
+        return 4
+    # Test files
+    if any(d in rel_path for d in ('/test/', '/tests/', '/spec/', '/__tests__/')):
+        return 6
+    return 5
+
 
 def download_repo(repo_url: str, local_path: str, repo_type: str = None, access_token: str = None) -> str:
     """
@@ -125,7 +202,7 @@ def download_repo(repo_url: str, local_path: str, repo_type: str = None, access_
         logger.info(f"Cloning repository from {repo_url} to {local_path}")
         # We use repo_url in the log to avoid exposing the token in logs
         result = subprocess.run(
-            ["git", "clone", "--depth=1", "--single-branch", clone_url, local_path],
+            ["git", "clone", "--depth=1", "--single-branch", "--filter=blob:limit=1m", clone_url, local_path],
             check=True,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -204,6 +281,9 @@ def read_all_documents(path: str, embedder_type: str = None, is_ollama_embedder:
         # Exclusion mode: use default exclusions plus any additional ones
         final_excluded_dirs = set(DEFAULT_EXCLUDED_DIRS)
         final_excluded_files = set(DEFAULT_EXCLUDED_FILES)
+
+        # Merge in the additional excluded dirs for large-repo optimization
+        final_excluded_dirs.update(ADDITIONAL_EXCLUDED_DIRS)
 
         # Add any additional excluded directories from config
         if "file_filters" in configs and "excluded_dirs" in configs["file_filters"]:
@@ -301,82 +381,103 @@ def read_all_documents(path: str, embedder_type: str = None, is_ollama_embedder:
 
             return not is_excluded
 
-    # Process code files first
-    for ext in code_extensions:
+    # Collect all candidate files first, then sort by priority before processing
+    all_extensions = set(code_extensions + doc_extensions)
+    code_ext_set = set(code_extensions)
+
+    candidate_files = []
+    for ext in all_extensions:
         files = glob.glob(f"{path}/**/*{ext}", recursive=True)
         for file_path in files:
             # Check if file should be processed based on inclusion/exclusion rules
             if not should_process_file(file_path, use_inclusion_mode, included_dirs, included_files, excluded_dirs, excluded_files):
                 continue
+            candidate_files.append(file_path)
 
+    # Sort by priority so the most important files are processed first
+    candidate_files.sort(key=lambda fp: _file_priority(os.path.relpath(fp, path)))
+    logger.info(f"Found {len(candidate_files)} candidate files after filtering (sorted by priority)")
+
+    # Process files with cumulative token budget enforcement
+    cumulative_tokens = 0
+
+    for file_path in candidate_files:
+        ext = os.path.splitext(file_path)[1].lower()
+        is_code = ext in code_ext_set
+        relative_path = os.path.relpath(file_path, path)
+
+        try:
+            # --- File size filter ---
             try:
-                with open(file_path, "r", encoding="utf-8") as f:
-                    content = f.read()
-                    relative_path = os.path.relpath(file_path, path)
-
-                    # Determine if this is an implementation file
-                    is_implementation = (
-                        not relative_path.startswith("test_")
-                        and not relative_path.startswith("app_")
-                        and "test" not in relative_path.lower()
-                    )
-
-                    # Check token count
-                    token_count = count_tokens(content, embedder_type)
-                    if token_count > MAX_EMBEDDING_TOKENS * 10:
-                        logger.warning(f"Skipping large file {relative_path}: Token count ({token_count}) exceeds limit")
-                        continue
-
-                    doc = Document(
-                        text=content,
-                        meta_data={
-                            "file_path": relative_path,
-                            "type": ext[1:],
-                            "is_code": True,
-                            "is_implementation": is_implementation,
-                            "title": relative_path,
-                            "token_count": token_count,
-                        },
-                    )
-                    documents.append(doc)
-            except Exception as e:
-                logger.error(f"Error reading {file_path}: {e}")
-
-    # Then process documentation files
-    for ext in doc_extensions:
-        files = glob.glob(f"{path}/**/*{ext}", recursive=True)
-        for file_path in files:
-            # Check if file should be processed based on inclusion/exclusion rules
-            if not should_process_file(file_path, use_inclusion_mode, included_dirs, included_files, excluded_dirs, excluded_files):
+                file_size = os.path.getsize(file_path)
+            except OSError:
+                continue
+            size_limit = MAX_CODE_FILE_SIZE if is_code else MAX_DOC_FILE_SIZE
+            if file_size > size_limit:
+                logger.debug(f"Skipping oversized file {relative_path}: {file_size} bytes > {size_limit}")
                 continue
 
-            try:
-                with open(file_path, "r", encoding="utf-8") as f:
-                    content = f.read()
-                    relative_path = os.path.relpath(file_path, path)
+            # --- Binary file detection ---
+            if _is_binary(file_path):
+                logger.debug(f"Skipping binary file {relative_path}")
+                continue
 
-                    # Check token count
-                    token_count = count_tokens(content, embedder_type)
-                    if token_count > MAX_EMBEDDING_TOKENS:
-                        logger.warning(f"Skipping large file {relative_path}: Token count ({token_count}) exceeds limit")
-                        continue
+            with open(file_path, "r", encoding="utf-8") as f:
+                content = f.read()
 
-                    doc = Document(
-                        text=content,
-                        meta_data={
-                            "file_path": relative_path,
-                            "type": ext[1:],
-                            "is_code": False,
-                            "is_implementation": False,
-                            "title": relative_path,
-                            "token_count": token_count,
-                        },
-                    )
-                    documents.append(doc)
-            except Exception as e:
-                logger.error(f"Error reading {file_path}: {e}")
+            # --- Per-file token limit (existing logic preserved) ---
+            token_count = count_tokens(content, embedder_type)
+            max_tokens_for_file = MAX_EMBEDDING_TOKENS * 10 if is_code else MAX_EMBEDDING_TOKENS
+            if token_count > max_tokens_for_file:
+                logger.warning(f"Skipping large file {relative_path}: Token count ({token_count}) exceeds limit")
+                continue
 
-    logger.info(f"Found {len(documents)} documents")
+            # --- Cumulative token budget ---
+            cumulative_tokens += token_count
+            if cumulative_tokens > MAX_TOTAL_INGESTION_TOKENS:
+                logger.warning(
+                    f"Token budget exhausted ({cumulative_tokens} > {MAX_TOTAL_INGESTION_TOKENS}). "
+                    f"Stopping file ingestion at {relative_path}. {len(documents)} documents collected so far."
+                )
+                break
+
+            if is_code:
+                # Determine if this is an implementation file
+                is_implementation = (
+                    not relative_path.startswith("test_")
+                    and not relative_path.startswith("app_")
+                    and "test" not in relative_path.lower()
+                )
+
+                doc = Document(
+                    text=content,
+                    meta_data={
+                        "file_path": relative_path,
+                        "type": ext[1:],
+                        "is_code": True,
+                        "is_implementation": is_implementation,
+                        "title": relative_path,
+                        "token_count": token_count,
+                    },
+                )
+            else:
+                doc = Document(
+                    text=content,
+                    meta_data={
+                        "file_path": relative_path,
+                        "type": ext[1:],
+                        "is_code": False,
+                        "is_implementation": False,
+                        "title": relative_path,
+                        "token_count": token_count,
+                    },
+                )
+
+            documents.append(doc)
+        except Exception as e:
+            logger.error(f"Error reading {file_path}: {e}")
+
+    logger.info(f"Found {len(documents)} documents (cumulative tokens: {cumulative_tokens})")
     return documents
 
 def prepare_data_pipeline(embedder_type: str = None, is_ollama_embedder: bool = None):
