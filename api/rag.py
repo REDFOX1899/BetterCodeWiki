@@ -8,6 +8,7 @@ from uuid import uuid4
 import adalflow as adal
 
 from api.tools.embedder import get_embedder
+from api.context_budget import context_budget_manager
 from api.prompts import RAG_SYSTEM_PROMPT as system_prompt, RAG_TEMPLATE
 
 # Create our own implementation of the conversation classes
@@ -382,13 +383,20 @@ IMPORTANT FORMATTING RULES:
         try:
             # Use the appropriate embedder for retrieval
             retrieve_embedder = self.query_embedder if self.is_ollama_embedder else self.embedder
+
+            # Calculate dynamic top_k based on model context window
+            retriever_kwargs = dict(configs["retriever"])
+            dynamic_top_k = self._get_dynamic_top_k()
+            if dynamic_top_k is not None:
+                retriever_kwargs["top_k"] = dynamic_top_k
+
             self.retriever = FAISSRetriever(
-                **configs["retriever"],
+                **retriever_kwargs,
                 embedder=retrieve_embedder,
                 documents=self.transformed_docs,
                 document_map_func=lambda doc: doc.vector,
             )
-            logger.info("FAISS retriever created successfully")
+            logger.info(f"FAISS retriever created successfully (top_k={retriever_kwargs.get('top_k', 'default')})")
         except Exception as e:
             logger.error(f"Error creating FAISS retriever: {str(e)}")
             # Try to provide more specific error information
@@ -412,6 +420,27 @@ IMPORTANT FORMATTING RULES:
                             sizes.append(f"doc_{i}: error")
                 logger.error(f"Sample embedding sizes: {', '.join(sizes)}")
             raise
+
+    def _get_dynamic_top_k(self) -> int:
+        """Calculate dynamic top_k based on the model's context window.
+
+        Uses the context_budget_manager to determine how many chunks to
+        retrieve based on the provider and model. Returns None if the
+        provider/model are not set (falls back to config default).
+        """
+        if self.provider and self.model:
+            try:
+                # Get average chunk size from text_splitter config
+                chunk_size = configs.get("text_splitter", {}).get("chunk_size", 350)
+                # Rough estimate: 1 word ~ 1.3 tokens, so chunk_tokens ~ chunk_size * 1.3
+                avg_chunk_tokens = int(chunk_size * 1.3)
+                dynamic_top_k = context_budget_manager.get_dynamic_top_k(
+                    self.provider, self.model, avg_chunk_tokens=avg_chunk_tokens
+                )
+                return dynamic_top_k
+            except Exception as e:
+                logger.warning(f"Failed to calculate dynamic top_k: {e}")
+        return None
 
     def call(self, query: str, language: str = "en") -> Tuple[List]:
         """

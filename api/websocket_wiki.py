@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import os
 from typing import List, Optional, Dict, Any
@@ -23,7 +24,8 @@ from api.openai_client import OpenAIClient
 from api.openrouter_client import OpenRouterClient
 from api.azureai_client import AzureAIClient
 from api.dashscope_client import DashscopeClient
-from api.rag import RAG
+from api.rag import RAG, Memory
+from api.rag_session import rag_session_manager
 
 # Configure logging
 from api.logging_config import setup_logging
@@ -60,6 +62,70 @@ class ChatCompletionRequest(BaseModel):
     included_dirs: Optional[str] = Field(None, description="Comma-separated list of directories to include exclusively")
     included_files: Optional[str] = Field(None, description="Comma-separated list of file patterns to include exclusively")
 
+async def generate_with_retry(rag, query, context_docs, provider, model, language="en", max_retries=3):
+    """Generate content with retry and context reduction on failure.
+
+    On token limit errors, reduces context by 50% per retry.
+    On transient errors (timeout, 503, 429), retries with exponential backoff.
+    Non-retryable errors are raised immediately.
+
+    Args:
+        rag: RAG instance to use for generation
+        query: The user query
+        context_docs: List of retrieved documents
+        provider: AI provider name
+        model: Model name
+        language: Language code for content generation
+        max_retries: Maximum number of retry attempts
+
+    Returns:
+        Retrieved documents result from RAG
+    """
+    context_fraction = 1.0
+
+    for attempt in range(max_retries):
+        try:
+            # Reduce context on retries
+            if context_fraction < 1.0 and context_docs:
+                reduced_count = max(1, int(len(context_docs) * context_fraction))
+                docs_to_use = context_docs[:reduced_count]
+                logger.info(f"Using {len(docs_to_use)}/{len(context_docs)} context docs "
+                           f"({context_fraction:.0%})")
+            else:
+                docs_to_use = context_docs
+
+            result = rag(query, language=language)
+            return result
+
+        except Exception as e:
+            error_str = str(e).lower()
+
+            # Token limit errors -- reduce context
+            if any(phrase in error_str for phrase in [
+                'maximum context length', 'token limit', 'too many tokens',
+                'content too large', 'request too large', 'input too long'
+            ]):
+                context_fraction *= 0.5
+                logger.warning(f"Token limit hit, reducing context to {context_fraction:.0%} "
+                             f"(attempt {attempt + 1}/{max_retries})")
+                continue
+
+            # Transient errors -- retry with backoff
+            if any(phrase in error_str for phrase in [
+                'timeout', 'connection', '503', '502', '429', 'rate limit'
+            ]):
+                wait_time = (2 ** attempt)  # 1s, 2s, 4s
+                logger.warning(f"Transient error, retrying in {wait_time}s "
+                             f"(attempt {attempt + 1}/{max_retries}): {e}")
+                await asyncio.sleep(wait_time)
+                continue
+
+            # Non-retryable error
+            raise
+
+    raise Exception(f"Failed after {max_retries} retries with context at {context_fraction:.0%}")
+
+
 async def handle_websocket_chat(websocket: WebSocket):
     """
     Handle WebSocket connection for chat completions.
@@ -83,10 +149,8 @@ async def handle_websocket_chat(websocket: WebSocket):
                     logger.warning(f"Request exceeds recommended token limit ({tokens} > 7500)")
                     input_too_large = True
 
-        # Create a new RAG instance for this request
+        # Create or reuse a cached RAG instance for this request
         try:
-            request_rag = RAG(provider=request.provider, model=request.model)
-
             # Extract custom file filter parameters if provided
             excluded_dirs = None
             excluded_files = None
@@ -106,8 +170,28 @@ async def handle_websocket_chat(websocket: WebSocket):
                 included_files = [unquote(file_pattern) for file_pattern in request.included_files.split('\n') if file_pattern.strip()]
                 logger.info(f"Using custom included files: {included_files}")
 
-            request_rag.prepare_retriever(request.repo_url, request.type, request.token, excluded_dirs, excluded_files, included_dirs, included_files)
-            logger.info(f"Retriever prepared for {request.repo_url}")
+            # Check for a cached RAG session (only when no custom file filters)
+            has_custom_filters = any([excluded_dirs, excluded_files, included_dirs, included_files])
+            from api.config import get_embedder_type
+            embedder_type = get_embedder_type()
+            session_key = rag_session_manager.get_session_key(request.repo_url, embedder_type) if not has_custom_filters else None
+            request_rag = rag_session_manager.get(session_key) if session_key else None
+
+            if request_rag is not None:
+                # Reuse cached RAG instance, update provider/model for this request
+                request_rag.provider = request.provider
+                request_rag.model = request.model
+                # Reset memory for this new conversation
+                request_rag.memory = Memory()
+                logger.info(f"Reusing cached RAG session for {request.repo_url}")
+            else:
+                # Create a new RAG instance
+                request_rag = RAG(provider=request.provider, model=request.model)
+                request_rag.prepare_retriever(request.repo_url, request.type, request.token, excluded_dirs, excluded_files, included_dirs, included_files)
+                # Cache the session if no custom filters were used
+                if session_key:
+                    rag_session_manager.put(session_key, request_rag)
+                logger.info(f"Created new RAG session for {request.repo_url}")
         except ValueError as e:
             if "No valid documents with embeddings found" in str(e):
                 logger.error(f"No valid embeddings found: {str(e)}")
@@ -202,10 +286,14 @@ async def handle_websocket_chat(websocket: WebSocket):
                     rag_query = f"Contexts related to {request.filePath}"
                     logger.info(f"Modified RAG query to focus on file: {request.filePath}")
 
-                # Try to perform RAG retrieval
+                # Try to perform RAG retrieval with retry logic
                 try:
-                    # This will use the actual RAG implementation
-                    retrieved_documents = request_rag(rag_query, language=request.language)
+                    # Use retry wrapper for resilient retrieval
+                    retrieved_documents = await generate_with_retry(
+                        request_rag, rag_query, None,
+                        request.provider, request.model,
+                        language=request.language
+                    )
 
                     if retrieved_documents and retrieved_documents[0].documents:
                         # Format context for the prompt in a more structured way
