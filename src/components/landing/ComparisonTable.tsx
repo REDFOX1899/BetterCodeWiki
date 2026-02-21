@@ -19,7 +19,6 @@ const rows: ComparisonRow[] = [
   { feature: 'Interactive AI chat about code', us: true, them: true },
   { feature: 'Private repository support', us: true, them: true },
   { feature: 'No data leaves your infra', us: true, them: false },
-  { feature: 'MCP server for AI agents', us: true, them: false },
 ];
 
 const CheckIcon = () => (

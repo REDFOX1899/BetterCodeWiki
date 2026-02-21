@@ -95,27 +95,6 @@ const features: Feature[] = [
       </svg>
     ),
   },
-  {
-    title: 'MCP Server Integration',
-    description:
-      'Query your wiki directly from Claude Code, Cursor, Windsurf, or any MCP-compatible AI agent. Your documentation lives where you code.',
-    icon: (
-      <svg
-        xmlns="http://www.w3.org/2000/svg"
-        className="h-6 w-6"
-        fill="none"
-        viewBox="0 0 24 24"
-        stroke="currentColor"
-        strokeWidth={1.5}
-      >
-        <path
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          d="M13.19 8.688a4.5 4.5 0 011.242 7.244l-4.5 4.5a4.5 4.5 0 01-6.364-6.364l1.757-1.757m13.35-.622l1.757-1.757a4.5 4.5 0 00-6.364-6.364l-4.5 4.5a4.5 4.5 0 001.242 7.244"
-        />
-      </svg>
-    ),
-  },
 ];
 
 export default function FeatureCards() {
@@ -205,16 +184,12 @@ export default function FeatureCards() {
           </p>
         </div>
 
-        {/* Feature Grid */}
+        {/* 2x2 Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {features.map((feature, index) => (
+          {features.map((feature) => (
             <div
               key={feature.title}
-              className={`fc-card border border-border bg-card/50 backdrop-blur-sm rounded-xl p-6 transition-colors hover:border-primary/50 hover:-translate-y-1 transition-transform duration-200${
-                features.length % 2 !== 0 && index === features.length - 1
-                  ? ' md:col-span-2 md:max-w-xl md:mx-auto md:w-full'
-                  : ''
-              }`}
+              className="fc-card border border-border bg-card/50 backdrop-blur-sm rounded-xl p-6 transition-colors hover:border-primary/50 hover:-translate-y-1 transition-transform duration-200"
             >
               {/* Icon */}
               <div className="fc-card-icon w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center text-primary mb-4">
