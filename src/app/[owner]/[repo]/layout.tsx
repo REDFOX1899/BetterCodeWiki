@@ -3,7 +3,14 @@
 import React from 'react';
 import Link from 'next/link';
 import { useParams, useSearchParams, usePathname } from 'next/navigation';
-import { FaGithub, FaGitlab, FaBitbucket, FaHome } from 'react-icons/fa';
+import { Github, Gitlab, Home } from 'lucide-react';
+
+// Bitbucket icon (lucide-react does not include one)
+const BitbucketIcon = ({ className }: { className?: string }) => (
+  <svg className={className} viewBox="0 0 24 24" fill="currentColor">
+    <path d="M.778 1.213a.768.768 0 00-.768.892l3.263 19.81c.084.5.515.868 1.022.873H19.95a.772.772 0 00.77-.646l3.27-20.03a.768.768 0 00-.768-.89H.778zM14.52 15.53H9.522L8.17 8.466h7.561l-1.211 7.064z"/>
+  </svg>
+);
 import ThemeToggle from '@/components/theme-toggle';
 
 /* ------------------------------------------------------------------ */
@@ -22,11 +29,11 @@ const TABS = [
 function PlatformIcon({ type }: { type: string }) {
   switch (type) {
     case 'gitlab':
-      return <FaGitlab className="h-3.5 w-3.5" />;
+      return <Gitlab size={14} className="h-3.5 w-3.5" />;
     case 'bitbucket':
-      return <FaBitbucket className="h-3.5 w-3.5" />;
+      return <BitbucketIcon className="h-3.5 w-3.5" />;
     default:
-      return <FaGithub className="h-3.5 w-3.5" />;
+      return <Github size={14} className="h-3.5 w-3.5" />;
   }
 }
 
@@ -67,7 +74,7 @@ export default function RepoLayout({ children }: { children: React.ReactNode }) 
               href="/"
               className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors shrink-0"
             >
-              <FaHome className="h-3.5 w-3.5" />
+              <Home size={14} className="h-3.5 w-3.5" />
             </Link>
             <span className="text-muted-foreground/30 shrink-0">/</span>
             <div className="flex items-center gap-1.5 text-sm font-medium text-foreground min-w-0">

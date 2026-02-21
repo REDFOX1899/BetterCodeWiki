@@ -15,7 +15,7 @@ import Link from 'next/link';
 import { useParams, useSearchParams } from 'next/navigation';
 import React, { useCallback, useMemo, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
-import { FaArrowLeft, FaBook, FaBookOpen, FaComments, FaExclamationTriangle, FaHome, FaProjectDiagram, FaSearch, FaSync, FaTimes } from 'react-icons/fa';
+import { ArrowLeft, Book, BookOpen, MessageSquare, AlertTriangle, Home, Network, Search, RefreshCw, X } from 'lucide-react';
 import DependencyGraph from '@/components/DependencyGraph';
 import WikiSidebarSkeleton from '@/components/skeletons/WikiSidebarSkeleton';
 import WikiContentSkeleton from '@/components/skeletons/WikiContentSkeleton';
@@ -348,7 +348,7 @@ export default function RepoWikiPage() {
                   className="inline-flex items-center gap-2 rounded-md px-3 py-1 text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
                   aria-label="Exit reading mode"
                 >
-                  <FaArrowLeft className="h-3.5 w-3.5" />
+                  <ArrowLeft size={14} className="h-3.5 w-3.5" />
                   <span className="hidden sm:inline">Exit Reading Mode</span>
                 </button>
                 <span className="text-sm font-medium text-foreground truncate">
@@ -368,7 +368,7 @@ export default function RepoWikiPage() {
                     className="inline-flex items-center gap-2 rounded-md border border-input bg-background px-3 py-1.5 text-xs text-muted-foreground shadow-sm transition-colors hover:bg-accent hover:text-accent-foreground"
                     aria-label="Search pages"
                   >
-                    <FaSearch className="h-3 w-3" />
+                    <Search size={12} className="h-3 w-3" />
                     <span className="hidden sm:inline">Search</span>
                     <kbd className="hidden sm:inline-flex items-center gap-0.5 rounded border border-border bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground ml-1">
                       <span>&#8984;</span>K
@@ -381,7 +381,7 @@ export default function RepoWikiPage() {
                     aria-label="View page relationships graph"
                     title="View page relationships"
                   >
-                    <FaProjectDiagram className="h-3 w-3" />
+                    <Network size={12} className="h-3 w-3" />
                     <span className="hidden sm:inline">Graph</span>
                   </button>
                   {/* Reading mode toggle */}
@@ -391,7 +391,7 @@ export default function RepoWikiPage() {
                     aria-label="Reading mode"
                     title="Reading mode (Alt+R)"
                   >
-                    <FaBook className="h-3 w-3" />
+                    <Book size={12} className="h-3 w-3" />
                     <span className="hidden sm:inline">Read</span>
                   </button>
                 </div>
@@ -491,7 +491,7 @@ export default function RepoWikiPage() {
         ) : error ? (
           <div className="max-w-2xl mx-auto mt-12 p-6 border border-destructive/20 bg-destructive/5 rounded-xl text-center">
             <div className="inline-flex items-center justify-center p-3 bg-destructive/10 rounded-full mb-4">
-              <FaExclamationTriangle className="text-xl text-destructive" />
+              <AlertTriangle size={20} className="text-destructive" />
             </div>
             <h3 className="text-lg font-semibold text-foreground mb-2">{messages.repoPage?.errorTitle || 'Generation Failed'}</h3>
             <p className="text-muted-foreground mb-6">{error}</p>
@@ -500,7 +500,7 @@ export default function RepoWikiPage() {
               href="/"
               className="inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 bg-primary text-primary-foreground hover:bg-primary/90 h-10 px-4 py-2"
             >
-              <FaHome className="mr-2 h-4 w-4" />
+              <Home size={16} className="mr-2 h-4 w-4" />
               {messages.repoPage?.backToHome || 'Back to Home'}
             </Link>
           </div>
@@ -563,7 +563,7 @@ export default function RepoWikiPage() {
                     className="ml-auto p-1.5 text-muted-foreground hover:text-foreground hover:bg-muted rounded-md transition-colors"
                     title={messages.repoPage?.refreshWiki || 'Refresh'}
                   >
-                    <FaSync className={`h-3.5 w-3.5 ${isLoading ? 'animate-spin' : ''}`} />
+                    <RefreshCw size={14} className={`h-3.5 w-3.5 ${isLoading ? 'animate-spin' : ''}`} />
                   </button>
                 </div>
               </motion.div>
@@ -626,7 +626,7 @@ export default function RepoWikiPage() {
                             className="shrink-0 mt-1 inline-flex items-center gap-1.5 rounded-md border border-input bg-background px-2.5 py-1.5 text-xs font-medium text-muted-foreground shadow-sm transition-colors hover:bg-accent hover:text-accent-foreground disabled:opacity-50 disabled:cursor-not-allowed"
                             title="Regenerate this page"
                           >
-                            <FaSync className={`h-3 w-3 ${isRegenerating === currentPageId ? 'animate-spin' : ''}`} />
+                            <RefreshCw size={12} className={`h-3 w-3 ${isRegenerating === currentPageId ? 'animate-spin' : ''}`} />
                             <span className="hidden sm:inline">{isRegenerating === currentPageId ? 'Regenerating...' : 'Regenerate'}</span>
                           </button>
                         )}
@@ -656,14 +656,14 @@ export default function RepoWikiPage() {
 
                     {isRegenerating === currentPageId ? (
                       <div className="flex flex-col items-center justify-center py-16 text-center">
-                        <FaSync className="h-6 w-6 text-primary animate-spin mb-4" />
+                        <RefreshCw size={24} className="h-6 w-6 text-primary animate-spin mb-4" />
                         <p className="text-sm font-medium text-foreground mb-1">Regenerating page...</p>
                         <p className="text-xs text-muted-foreground">This may take a moment</p>
                       </div>
                     ) : generatedPages[currentPageId].content.startsWith('Error generating content:') ? (
                       <div className="flex flex-col items-center justify-center py-12 text-center">
                         <div className="inline-flex items-center justify-center p-3 bg-destructive/10 rounded-full mb-4">
-                          <FaExclamationTriangle className="text-xl text-destructive" />
+                          <AlertTriangle size={20} className="text-destructive" />
                         </div>
                         <p className="text-sm text-muted-foreground mb-4">{generatedPages[currentPageId].content}</p>
                         <button
@@ -676,7 +676,7 @@ export default function RepoWikiPage() {
                           }}
                           className="inline-flex items-center gap-2 rounded-md bg-primary text-primary-foreground px-4 py-2 text-sm font-medium hover:bg-primary/90 transition-colors"
                         >
-                          <FaSync className="h-3 w-3" />
+                          <RefreshCw size={12} className="h-3 w-3" />
                           Retry
                         </button>
                       </div>
@@ -725,7 +725,7 @@ export default function RepoWikiPage() {
               ) : (
                 <div className="flex flex-col items-center justify-center h-full text-muted-foreground">
                   <div className="p-4 bg-muted/30 rounded-full mb-4">
-                    <FaBookOpen className="text-3xl opacity-50" />
+                    <BookOpen size={30} className="opacity-50" />
                   </div>
                   <p className="text-lg font-medium text-foreground">Select a page</p>
                   <p className="text-sm">Choose a page from the sidebar to view its content</p>
@@ -749,7 +749,7 @@ export default function RepoWikiPage() {
           className={`fixed bottom-8 right-8 h-12 w-12 rounded-full shadow-lg flex items-center justify-center transition-all hover:scale-105 z-50 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 ${isAskModalOpen ? 'bg-primary/90 text-primary-foreground ring-2 ring-primary ring-offset-2 ring-offset-background' : 'bg-primary text-primary-foreground hover:bg-primary/90'}`}
           aria-label={isAskModalOpen ? 'Close Ask AI' : (messages.ask?.title || 'Ask AI')}
         >
-          {isAskModalOpen ? <FaTimes className="h-5 w-5" /> : <FaComments className="h-5 w-5" />}
+          {isAskModalOpen ? <X size={20} className="h-5 w-5" /> : <MessageSquare size={20} className="h-5 w-5" />}
         </button>
       )}
 
@@ -793,7 +793,7 @@ export default function RepoWikiPage() {
                 className="p-2 rounded-md hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
                 aria-label="Close drawer"
               >
-                <FaTimes className="h-4 w-4" />
+                <X size={16} className="h-4 w-4" />
               </button>
             </div>
           </div>

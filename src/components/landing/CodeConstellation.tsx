@@ -3,7 +3,8 @@
 import { useRef, useMemo } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { Float, Line } from '@react-three/drei';
-import * as THREE from 'three';
+import { Vector3, MathUtils } from 'three';
+import type { Mesh, MeshStandardMaterial, Group } from 'three';
 
 interface CodeConstellationProps {
   mouse: { x: number; y: number };
@@ -22,7 +23,7 @@ const NODE_COUNT = 40;
 const HUB_INDICES = [0, 8, 16, 24, 35]; // 5 hub nodes spread across the sphere
 
 interface NodeData {
-  position: THREE.Vector3;
+  position: Vector3;
   color: string;
   baseSize: number;
   isHub: boolean;
@@ -31,15 +32,15 @@ interface NodeData {
 }
 
 interface ConnectionData {
-  start: THREE.Vector3;
-  end: THREE.Vector3;
+  start: Vector3;
+  end: Vector3;
 }
 
 /**
  * Distribute points on a fibonacci sphere for organic, even spacing.
  */
-function fibonacciSphere(count: number, radius: number): THREE.Vector3[] {
-  const points: THREE.Vector3[] = [];
+function fibonacciSphere(count: number, radius: number): Vector3[] {
+  const points: Vector3[] = [];
   const goldenAngle = Math.PI * (3 - Math.sqrt(5)); // ~2.3999 radians
 
   for (let i = 0; i < count; i++) {
@@ -51,7 +52,7 @@ function fibonacciSphere(count: number, radius: number): THREE.Vector3[] {
     const x = Math.cos(theta) * radiusAtY;
     const z = Math.sin(theta) * radiusAtY;
 
-    points.push(new THREE.Vector3(x * radius, y * radius, z * radius));
+    points.push(new Vector3(x * radius, y * radius, z * radius));
   }
 
   return points;
@@ -63,7 +64,7 @@ function fibonacciSphere(count: number, radius: number): THREE.Vector3[] {
  * within maxDistance.
  */
 function findConnections(
-  nodes: THREE.Vector3[],
+  nodes: Vector3[],
   minConnections: number,
   maxConnections: number,
   maxDistance: number
@@ -110,8 +111,8 @@ function findConnections(
  * A single node sphere that can pulse independently via useFrame.
  */
 function ConstellationNode({ node }: { node: NodeData }) {
-  const meshRef = useRef<THREE.Mesh>(null);
-  const materialRef = useRef<THREE.MeshStandardMaterial>(null);
+  const meshRef = useRef<Mesh>(null);
+  const materialRef = useRef<MeshStandardMaterial>(null);
 
   useFrame((state) => {
     if (!meshRef.current || !materialRef.current) return;
@@ -142,7 +143,7 @@ function ConstellationNode({ node }: { node: NodeData }) {
 }
 
 export default function CodeConstellation({ mouse }: CodeConstellationProps) {
-  const groupRef = useRef<THREE.Group>(null);
+  const groupRef = useRef<Group>(null);
 
   // Generate node data (positions, colors, sizes) — memoized since it's static
   const nodes: NodeData[] = useMemo(() => {
@@ -177,16 +178,16 @@ export default function CodeConstellation({ mouse }: CodeConstellationProps) {
     groupRef.current.rotation.y += delta * 0.08;
 
     // Mouse parallax tilt (same approach as KnowledgeCube)
-    const maxTilt = THREE.MathUtils.degToRad(12);
+    const maxTilt = MathUtils.degToRad(12);
     const targetRotationX = -mouse.y * maxTilt;
     const targetRotationZ = mouse.x * maxTilt;
 
-    groupRef.current.rotation.x = THREE.MathUtils.lerp(
+    groupRef.current.rotation.x = MathUtils.lerp(
       groupRef.current.rotation.x,
       targetRotationX,
       0.05
     );
-    groupRef.current.rotation.z = THREE.MathUtils.lerp(
+    groupRef.current.rotation.z = MathUtils.lerp(
       groupRef.current.rotation.z,
       targetRotationZ,
       0.05

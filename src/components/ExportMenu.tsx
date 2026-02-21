@@ -1,8 +1,7 @@
 'use client';
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { FaDownload, FaFileExport, FaFileAlt, FaCode, FaGlobe, FaFileArchive, FaCheck } from 'react-icons/fa';
-import { FiCopy } from 'react-icons/fi';
+import { Download, FileOutput, FileText, Code, Globe, FileArchive, Check, Copy } from 'lucide-react';
 import { WikiPage, WikiStructure } from '@/types/wiki';
 
 interface ExportMenuProps {
@@ -793,31 +792,31 @@ const ExportMenu: React.FC<ExportMenuProps> = ({ wikiStructure, generatedPages, 
       format: 'markdown' as const,
       label: 'Markdown',
       ext: '.md',
-      icon: <FaFileAlt className="h-4 w-4" />,
+      icon: <FileText size={16} className="h-4 w-4" />,
     },
     {
       format: 'json' as const,
       label: 'JSON',
       ext: '.json',
-      icon: <FaCode className="h-4 w-4" />,
+      icon: <Code size={16} className="h-4 w-4" />,
     },
     {
       format: 'notion' as const,
       label: 'Notion Export',
       ext: '.zip',
-      icon: <FaFileArchive className="h-4 w-4" />,
+      icon: <FileArchive size={16} className="h-4 w-4" />,
     },
     {
       format: 'confluence' as const,
       label: 'Confluence',
       ext: '.txt',
-      icon: <FaFileExport className="h-4 w-4" />,
+      icon: <FileOutput size={16} className="h-4 w-4" />,
     },
     {
       format: 'html' as const,
       label: 'HTML',
       ext: '.html',
-      icon: <FaGlobe className="h-4 w-4" />,
+      icon: <Globe size={16} className="h-4 w-4" />,
     },
   ];
 
@@ -832,7 +831,7 @@ const ExportMenu: React.FC<ExportMenuProps> = ({ wikiStructure, generatedPages, 
               className="w-full flex items-center gap-3 px-4 py-2 text-sm text-foreground hover:bg-muted/50 transition-colors"
             >
               <span className="text-muted-foreground">
-                {embedCopied ? <FaCheck className="h-4 w-4 text-green-500" /> : <FiCopy className="h-4 w-4" />}
+                {embedCopied ? <Check size={16} className="h-4 w-4 text-green-500" /> : <Copy size={16} className="h-4 w-4" />}
               </span>
               <span className="flex-1 text-left font-medium">
                 {embedCopied ? 'Copied!' : 'Copy Embed Code'}
@@ -859,7 +858,7 @@ const ExportMenu: React.FC<ExportMenuProps> = ({ wikiStructure, generatedPages, 
           disabled={isExporting}
           className="w-full inline-flex items-center justify-center whitespace-nowrap rounded-md text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 border border-input bg-background shadow-sm hover:bg-accent hover:text-accent-foreground h-8 px-3"
         >
-          <FaDownload className="mr-2 h-3 w-3" />
+          <Download size={12} className="mr-2 h-3 w-3" />
           {isExporting ? 'Exporting...' : 'Export'}
         </button>
       </div>

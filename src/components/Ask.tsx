@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useRef, useEffect } from 'react';
-import { FaChevronLeft, FaChevronRight } from 'react-icons/fa';
+import { ChevronLeft, ChevronRight } from 'lucide-react';
 import Markdown from './Markdown';
 import { useLanguage } from '@/contexts/LanguageContext';
 import RepoInfo from '@/types/repoinfo';
@@ -753,7 +753,7 @@ const Ask: React.FC<AskProps> = ({
                     className="p-1.5 rounded-md hover:bg-background hover:shadow-sm disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:shadow-none transition-all"
                     aria-label="Previous stage"
                   >
-                    <FaChevronLeft size={12} className="text-muted-foreground" />
+                    <ChevronLeft size={12} className="text-muted-foreground" />
                   </button>
 
                   <div className="text-xs font-medium text-muted-foreground min-w-[60px] text-center">
@@ -766,7 +766,7 @@ const Ask: React.FC<AskProps> = ({
                     className="p-1.5 rounded-md hover:bg-background hover:shadow-sm disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:shadow-none transition-all"
                     aria-label="Next stage"
                   >
-                    <FaChevronRight size={12} className="text-muted-foreground" />
+                    <ChevronRight size={12} className="text-muted-foreground" />
                   </button>
 
                   <div className="mx-2 h-4 w-px bg-border"></div>

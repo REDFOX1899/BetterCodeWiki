@@ -3,12 +3,12 @@
 import { useRef, useMemo } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { Points, PointMaterial } from '@react-three/drei';
-import * as THREE from 'three';
+import type { Points as ThreePoints } from 'three';
 
 const PARTICLE_COUNT = 200;
 
 export default function ParticleField() {
-  const pointsRef = useRef<THREE.Points>(null);
+  const pointsRef = useRef<ThreePoints>(null);
 
   const positions = useMemo(() => {
     const pos = new Float32Array(PARTICLE_COUNT * 3);

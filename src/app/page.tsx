@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import dynamic from 'next/dynamic';
 import { motion } from 'framer-motion';
-import { FaWikipediaW, FaGithub, FaTwitter } from 'react-icons/fa';
+import { BookOpen, Github, Twitter } from 'lucide-react';
 import ThemeToggle from '@/components/theme-toggle';
 import Mermaid from '../components/Mermaid';
 import ConfigurationModal from '@/components/ConfigurationModal';
@@ -466,7 +466,7 @@ export default function Home() {
           {/* Left: Logo + App Name */}
           <div className="flex items-center gap-3">
             <div className="bg-primary p-2 rounded-xl elevation-1">
-              <FaWikipediaW className="text-lg text-primary-foreground" />
+              <BookOpen size={18} className="text-primary-foreground" />
             </div>
             <span className="text-title-md text-foreground" style={{ fontFamily: 'var(--font-display), var(--font-sans), sans-serif' }}>
               {t('common.appName')}
@@ -493,7 +493,7 @@ export default function Home() {
               className="text-muted-foreground hover:text-foreground transition-colors"
               aria-label="GitHub Repository"
             >
-              <FaGithub className="text-lg" />
+              <Github size={18} />
             </a>
           </div>
         </div>
@@ -564,7 +564,7 @@ export default function Home() {
               <div className="flex flex-col sm:flex-row items-center justify-between pb-6 border-b border-border">
                 <div className="flex items-center gap-3">
                   <div className="bg-primary/10 p-2 rounded-full">
-                    <FaWikipediaW className="text-xl text-primary" />
+                    <BookOpen size={20} className="text-primary" />
                   </div>
                   <div>
                     <h2 className="text-headline-md text-foreground">{t('projects.existingProjects')}</h2>
@@ -679,10 +679,10 @@ export default function Home() {
             <div className="flex items-center gap-6">
               <div className="flex items-center space-x-5">
                 <a href="https://github.com/REDFOX1899/BetterCodeWiki" target="_blank" rel="noopener noreferrer" className="hover:text-foreground transition-colors">
-                  <FaGithub className="text-lg" />
+                  <Github size={18} />
                 </a>
                 <a href="https://github.com/REDFOX1899/BetterCodeWiki" target="_blank" rel="noopener noreferrer" className="hover:text-foreground transition-colors">
-                  <FaTwitter className="text-lg" />
+                  <Twitter size={18} />
                 </a>
               </div>
             </div>

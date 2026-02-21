@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
-import { FaTimes, FaTh, FaList } from 'react-icons/fa';
+import { X, LayoutGrid, List } from 'lucide-react';
 
 // Interface should match the structure from the API
 interface ProcessedProject {
@@ -159,7 +159,7 @@ export default function ProcessedProjects({
               onClick={clearSearch}
               className="absolute inset-y-0 right-0 flex items-center pr-3 text-muted-foreground hover:text-foreground transition-colors"
             >
-              <FaTimes className="h-4 w-4" />
+              <X size={16} className="h-4 w-4" />
             </button>
           )}
         </div>
@@ -174,7 +174,7 @@ export default function ProcessedProjects({
               }`}
             title="Card View"
           >
-            <FaTh className="h-4 w-4" />
+            <LayoutGrid size={16} className="h-4 w-4" />
           </button>
           <button
             onClick={() => setViewMode('list')}
@@ -184,7 +184,7 @@ export default function ProcessedProjects({
               }`}
             title="List View"
           >
-            <FaList className="h-4 w-4" />
+            <List size={16} className="h-4 w-4" />
           </button>
         </div>
       </div>
@@ -207,7 +207,7 @@ export default function ProcessedProjects({
                   className="absolute top-4 right-4 text-muted-foreground/50 hover:text-destructive opacity-0 group-hover:opacity-100 transition-opacity p-1"
                   title="Delete project"
                 >
-                  <FaTimes className="h-4 w-4" />
+                  <X size={16} className="h-4 w-4" />
                 </button>
                 <Link
                   href={`/${project.owner}/${project.repo}?type=${project.repo_type}&language=${project.language}`}
@@ -268,7 +268,7 @@ export default function ProcessedProjects({
                   className="text-muted-foreground/50 hover:text-destructive p-2 opacity-0 group-hover:opacity-100 transition-opacity"
                   title="Delete project"
                 >
-                  <FaTimes className="h-4 w-4" />
+                  <X size={16} className="h-4 w-4" />
                 </button>
               </div>
             )

@@ -2,7 +2,7 @@
 
 import React from 'react';
 import { useLanguage } from '@/contexts/LanguageContext';
-import { FaBookOpen, FaList } from 'react-icons/fa';
+import { BookOpen, List } from 'lucide-react';
 
 interface WikiTypeSelectorProps {
   isComprehensiveView: boolean;
@@ -30,7 +30,7 @@ const WikiTypeSelector: React.FC<WikiTypeSelectorProps> = ({
             }`}
         >
           <div className="flex items-center">
-            <FaBookOpen className={`mr-2 ${isComprehensiveView ? 'text-primary' : 'text-muted-foreground group-hover:text-foreground'}`} />
+            <BookOpen size={16} className={`mr-2 ${isComprehensiveView ? 'text-primary' : 'text-muted-foreground group-hover:text-foreground'}`} />
             <div className="text-left">
               <div className="font-medium text-sm">{t.form?.comprehensive || 'Comprehensive'}</div>
               <div className={`text-xs ${isComprehensiveView ? 'text-primary/80' : 'text-muted-foreground'}`}>
@@ -54,7 +54,7 @@ const WikiTypeSelector: React.FC<WikiTypeSelectorProps> = ({
             }`}
         >
           <div className="flex items-center">
-            <FaList className={`mr-2 ${!isComprehensiveView ? 'text-primary' : 'text-muted-foreground group-hover:text-foreground'}`} />
+            <List size={16} className={`mr-2 ${!isComprehensiveView ? 'text-primary' : 'text-muted-foreground group-hover:text-foreground'}`} />
             <div className="text-left">
               <div className="font-medium text-sm">{t.form?.concise || 'Concise'}</div>
               <div className={`text-xs ${!isComprehensiveView ? 'text-primary/80' : 'text-muted-foreground'}`}>

@@ -3,14 +3,15 @@
 import { useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { Float, Edges, MeshTransmissionMaterial } from '@react-three/drei';
-import * as THREE from 'three';
+import { MathUtils } from 'three';
+import type { Mesh } from 'three';
 
 interface KnowledgeCubeProps {
   mouse: { x: number; y: number };
 }
 
 export default function KnowledgeCube({ mouse }: KnowledgeCubeProps) {
-  const meshRef = useRef<THREE.Mesh>(null);
+  const meshRef = useRef<Mesh>(null);
 
   useFrame(() => {
     if (!meshRef.current) return;
@@ -19,16 +20,16 @@ export default function KnowledgeCube({ mouse }: KnowledgeCubeProps) {
     meshRef.current.rotation.y += 0.003;
 
     // Mouse parallax with lerp
-    const maxTilt = THREE.MathUtils.degToRad(15);
+    const maxTilt = MathUtils.degToRad(15);
     const targetRotationX = -mouse.y * maxTilt;
     const targetRotationZ = mouse.x * maxTilt;
 
-    meshRef.current.rotation.x = THREE.MathUtils.lerp(
+    meshRef.current.rotation.x = MathUtils.lerp(
       meshRef.current.rotation.x,
       targetRotationX,
       0.05
     );
-    meshRef.current.rotation.z = THREE.MathUtils.lerp(
+    meshRef.current.rotation.z = MathUtils.lerp(
       meshRef.current.rotation.z,
       targetRotationZ,
       0.05

@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
-import { FaChevronRight, FaChevronDown } from 'react-icons/fa';
+import { ChevronRight, ChevronDown } from 'lucide-react';
 import { WikiPage, WikiStructure } from '@/types/wiki';
 
 interface WikiTreeViewProps {
@@ -211,9 +211,9 @@ const WikiTreeView: React.FC<WikiTreeViewProps> = ({
         >
           <span className="mr-2 text-muted-foreground transition-transform duration-150">
             {isExpanded ? (
-              <FaChevronDown className="text-[10px]" />
+              <ChevronDown size={10} />
             ) : (
-              <FaChevronRight className="text-[10px]" />
+              <ChevronRight size={10} />
             )}
           </span>
           <span className="truncate flex-1">{section.title}</span>

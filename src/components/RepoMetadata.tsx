@@ -1,7 +1,14 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import { FaExternalLinkAlt, FaGithub, FaGitlab, FaBitbucket, FaStar, FaCodeBranch } from 'react-icons/fa';
+import { ExternalLink, Github, Gitlab, Star, GitFork } from 'lucide-react';
+
+// Bitbucket icon (lucide-react does not include one)
+const BitbucketIcon = ({ className }: { className?: string }) => (
+  <svg className={className} viewBox="0 0 24 24" fill="currentColor">
+    <path d="M.778 1.213a.768.768 0 00-.768.892l3.263 19.81c.084.5.515.868 1.022.873H19.95a.772.772 0 00.77-.646l3.27-20.03a.768.768 0 00-.768-.89H.778zM14.52 15.53H9.522L8.17 8.466h7.561l-1.211 7.064z"/>
+  </svg>
+);
 
 interface RepoMetadataProps {
   repoInfo: {
@@ -48,9 +55,9 @@ function getPlatformLabel(type: string): string {
 
 function getPlatformIcon(type: string) {
   switch (type) {
-    case 'github': return <FaGithub className="h-3 w-3" />;
-    case 'gitlab': return <FaGitlab className="h-3 w-3" />;
-    case 'bitbucket': return <FaBitbucket className="h-3 w-3" />;
+    case 'github': return <Github size={12} className="h-3 w-3" />;
+    case 'gitlab': return <Gitlab size={12} className="h-3 w-3" />;
+    case 'bitbucket': return <BitbucketIcon className="h-3 w-3" />;
     default: return null;
   }
 }
@@ -198,13 +205,13 @@ export default function RepoMetadata({ repoInfo }: RepoMetadataProps) {
         <div className="flex items-center gap-3 mt-2">
           {metadata.stars > 0 && (
             <span className="inline-flex items-center gap-1 text-label-md text-muted-foreground">
-              <FaStar className="h-3 w-3 text-warning" />
+              <Star size={12} className="h-3 w-3 text-warning" />
               {formatCount(metadata.stars)}
             </span>
           )}
           {metadata.forks > 0 && (
             <span className="inline-flex items-center gap-1 text-label-md text-muted-foreground">
-              <FaCodeBranch className="h-3 w-3" />
+              <GitFork size={12} className="h-3 w-3" />
               {formatCount(metadata.forks)}
             </span>
           )}
@@ -226,7 +233,7 @@ export default function RepoMetadata({ repoInfo }: RepoMetadataProps) {
       >
         {platformIcon}
         <span>View on {platformLabel}</span>
-        <FaExternalLinkAlt className="h-2.5 w-2.5" />
+        <ExternalLink size={10} className="h-2.5 w-2.5" />
       </a>
     </div>
   );

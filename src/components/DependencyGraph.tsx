@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { FaTimes, FaSearchPlus, FaSearchMinus, FaExpand, FaProjectDiagram, FaSitemap, FaDotCircle } from 'react-icons/fa';
+import { X, ZoomIn, ZoomOut, Maximize, Network, GitBranch, CircleDot } from 'lucide-react';
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                              */
@@ -840,9 +840,9 @@ export default function DependencyGraph({
             className="flex items-center rounded-lg p-0.5 gap-0.5 bg-muted/50"
           >
             {([
-              { mode: 'force' as LayoutMode, icon: <FaProjectDiagram className="w-3 h-3" />, label: 'Force' },
-              { mode: 'hierarchical' as LayoutMode, icon: <FaSitemap className="w-3 h-3" />, label: 'Tree' },
-              { mode: 'radial' as LayoutMode, icon: <FaDotCircle className="w-3 h-3" />, label: 'Radial' },
+              { mode: 'force' as LayoutMode, icon: <Network size={12} className="w-3 h-3" />, label: 'Force' },
+              { mode: 'hierarchical' as LayoutMode, icon: <GitBranch size={12} className="w-3 h-3" />, label: 'Tree' },
+              { mode: 'radial' as LayoutMode, icon: <CircleDot size={12} className="w-3 h-3" />, label: 'Radial' },
             ]).map(({ mode, icon, label }) => (
               <button
                 key={mode}
@@ -867,7 +867,7 @@ export default function DependencyGraph({
               aria-label="Zoom in"
               title="Zoom in"
             >
-              <FaSearchPlus className="w-3.5 h-3.5" />
+              <ZoomIn size={14} className="w-3.5 h-3.5" />
             </button>
             <button
               onClick={zoomOut}
@@ -875,7 +875,7 @@ export default function DependencyGraph({
               aria-label="Zoom out"
               title="Zoom out"
             >
-              <FaSearchMinus className="w-3.5 h-3.5" />
+              <ZoomOut size={14} className="w-3.5 h-3.5" />
             </button>
             <button
               onClick={fitToView}
@@ -883,7 +883,7 @@ export default function DependencyGraph({
               aria-label="Fit to view"
               title="Fit to view"
             >
-              <FaExpand className="w-3.5 h-3.5" />
+              <Maximize size={14} className="w-3.5 h-3.5" />
             </button>
 
             <div className="w-px h-5 mx-1 bg-border/50" />
@@ -893,7 +893,7 @@ export default function DependencyGraph({
               className="p-2 rounded-lg transition-colors text-muted-foreground hover:bg-muted"
               aria-label="Close graph"
             >
-              <FaTimes className="w-3.5 h-3.5" />
+              <X size={14} className="w-3.5 h-3.5" />
             </button>
           </div>
         </div>
