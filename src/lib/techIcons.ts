@@ -1,0 +1,125 @@
+/**
+ * Tech icon registry for Mermaid diagram logo injection.
+ * Uses pre-generated icon data from simple-icons to avoid bundling
+ * the entire simple-icons package at runtime.
+ */
+
+import { ICON_DATA } from './techIconData';
+
+// Alias map: common variations -> canonical slug
+const aliases: Record<string, string> = {
+  'postgres': 'postgresql',
+  'node': 'nodedotjs',
+  'nodejs': 'nodedotjs',
+  'node.js': 'nodedotjs',
+  'ts': 'typescript',
+  'js': 'javascript',
+  'k8s': 'kubernetes',
+  'gcp': 'googlecloud',
+  'google cloud': 'googlecloud',
+  'mongo': 'mongodb',
+  'vue': 'vuedotjs',
+  'vue.js': 'vuedotjs',
+  'vuejs': 'vuedotjs',
+  'nuxt': 'nuxtdotjs',
+  'nuxt.js': 'nuxtdotjs',
+  'nuxtjs': 'nuxtdotjs',
+  'next': 'nextdotjs',
+  'next.js': 'nextdotjs',
+  'nextjs': 'nextdotjs',
+  'tailwind': 'tailwindcss',
+  'rails': 'rubyonrails',
+  'ruby on rails': 'rubyonrails',
+  'dotnet': 'dotnet',
+  '.net': 'dotnet',
+  'c#': 'dotnet',
+  'csharp': 'dotnet',
+  'graphql': 'graphql',
+  'kafka': 'apachekafka',
+  'elastic': 'elasticsearch',
+  'es': 'elasticsearch',
+  'rabbitmq': 'rabbitmq',
+  'rabbit': 'rabbitmq',
+  'pg': 'postgresql',
+  'mysql': 'mysql',
+  'maria': 'mariadb',
+  'mariadb': 'mariadb',
+  'sqlite': 'sqlite',
+  'react': 'react',
+  'reactjs': 'react',
+  'react.js': 'react',
+  'angular': 'angular',
+  'angularjs': 'angular',
+  'svelte': 'svelte',
+  'sveltekit': 'svelte',
+  'gatsby': 'gatsby',
+  'gatsbyjs': 'gatsby',
+  'remix': 'remix',
+  'astro': 'astro',
+  'vite': 'vite',
+  'webpack': 'webpack',
+  'bun': 'bun',
+  'deno': 'deno',
+  'express': 'express',
+  'expressjs': 'express',
+  'express.js': 'express',
+  'fastapi': 'fastapi',
+  'flask': 'flask',
+  'django': 'django',
+  'spring': 'spring',
+  'springboot': 'spring',
+  'spring boot': 'spring',
+  'laravel': 'laravel',
+  'php': 'php',
+  'python': 'python',
+  'py': 'python',
+  'rust': 'rust',
+  'go': 'go',
+  'golang': 'go',
+  'kotlin': 'kotlin',
+  'swift': 'swift',
+  'ruby': 'ruby',
+  'docker': 'docker',
+  'kubernetes': 'kubernetes',
+  'terraform': 'terraform',
+  'ansible': 'ansible',
+  'jenkins': 'jenkins',
+  'circleci': 'circleci',
+  'nginx': 'nginx',
+  'apache': 'apache',
+  'linux': 'linux',
+  'ubuntu': 'ubuntu',
+  'git': 'git',
+  'github': 'github',
+  'gitlab': 'gitlab',
+  'npm': 'npm',
+  'yarn': 'yarn',
+  'vercel': 'vercel',
+  'netlify': 'netlify',
+  'electron': 'electron',
+  'flutter': 'flutter',
+  'dart': 'dart',
+  'prisma': 'prisma',
+  'supabase': 'supabase',
+  'firebase': 'firebase',
+  'grafana': 'grafana',
+  'prometheus': 'prometheus',
+  'redis': 'redis',
+  'mongodb': 'mongodb',
+  'postgresql': 'postgresql',
+  'typescript': 'typescript',
+  'javascript': 'javascript',
+};
+
+export function getIconSvg(term: string): { svg: string; hex: string } | null {
+  const normalized = term.toLowerCase().trim();
+  if (!normalized) return null;
+
+  // Check alias first, then direct slug match
+  const slug = aliases[normalized] ?? normalized;
+  const entry = ICON_DATA[slug];
+  if (!entry) return null;
+
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="${entry.p}"/></svg>`;
+  return { svg, hex: entry.h };
+}

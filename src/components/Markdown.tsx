@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useMemo } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeRaw from 'rehype-raw';
@@ -6,9 +6,33 @@ import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { tomorrow } from 'react-syntax-highlighter/dist/cjs/styles/prism';
 import Mermaid from './Mermaid';
 import { slugify } from './TableOfContents';
+import type { DiagramData } from '../types/diagramData';
 
 interface MarkdownProps {
   content: string;
+  onDiagramNodeClick?: (nodeId: string, label: string, rect: DOMRect, diagramData?: DiagramData) => void;
+}
+
+const DIAGRAM_DATA_REGEX = /<!-- DIAGRAM_DATA_START -->\s*([\s\S]*?)\s*<!-- DIAGRAM_DATA_END -->/g;
+
+/**
+ * Extract structured diagram data blocks from content and return
+ * the cleaned content plus parsed diagram data keyed by mermaid source.
+ */
+function extractDiagramData(content: string): { cleanContent: string; diagramDataMap: Map<string, DiagramData> } {
+  const diagramDataMap = new Map<string, DiagramData>();
+  const cleanContent = content.replace(DIAGRAM_DATA_REGEX, (_match, jsonStr: string) => {
+    try {
+      const data = JSON.parse(jsonStr) as DiagramData;
+      if (data.mermaidSource) {
+        diagramDataMap.set(data.mermaidSource, data);
+      }
+    } catch {
+      // Invalid JSON — silently strip the markers
+    }
+    return '';
+  });
+  return { cleanContent, diagramDataMap };
 }
 
 /** Recursively extract plain text from React children. */
@@ -53,7 +77,10 @@ const CopyButton: React.FC<{ text: string }> = ({ text }) => {
   );
 };
 
-const Markdown: React.FC<MarkdownProps> = ({ content }) => {
+const Markdown: React.FC<MarkdownProps> = ({ content, onDiagramNodeClick }) => {
+  // Extract and strip diagram data markers from content
+  const { cleanContent, diagramDataMap } = useMemo(() => extractDiagramData(content), [content]);
+
   // Define markdown components
   const MarkdownComponents: React.ComponentProps<typeof ReactMarkdown>['components'] = {
     p({ children, ...props }: { children?: React.ReactNode }) {
@@ -171,12 +198,22 @@ const Markdown: React.FC<MarkdownProps> = ({ content }) => {
 
       // Handle Mermaid diagrams
       if (!inline && match && match[1] === 'mermaid') {
+        // Look up structured diagram data for this mermaid source
+        const matchedData = diagramDataMap.get(codeContent) || undefined;
+        // Create a wrapper that includes diagramData in the callback
+        const handleNodeClick = onDiagramNodeClick
+          ? (nodeId: string, label: string, rect: DOMRect) => {
+              onDiagramNodeClick(nodeId, label, rect, matchedData);
+            }
+          : undefined;
         return (
           <div className="my-8 bg-muted/30 rounded-lg overflow-hidden elevation-2">
             <Mermaid
               chart={codeContent}
               className="w-full max-w-full"
               zoomingEnabled={true}
+              diagramData={matchedData}
+              onNodeClick={handleNodeClick}
             />
           </div>
         );
@@ -225,7 +262,7 @@ const Markdown: React.FC<MarkdownProps> = ({ content }) => {
         rehypePlugins={[rehypeRaw]}
         components={MarkdownComponents}
       >
-        {content}
+        {cleanContent}
       </ReactMarkdown>
     </div>
   );

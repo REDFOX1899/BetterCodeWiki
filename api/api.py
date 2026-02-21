@@ -47,6 +47,7 @@ class WikiPage(BaseModel):
     filePaths: List[str]
     importance: str # Should ideally be Literal['high', 'medium', 'low']
     relatedPages: List[str]
+    diagramData: Optional[List[Dict]] = None
 
 class ProcessedProjectEntry(BaseModel):
     id: str  # Filename
@@ -145,6 +146,7 @@ class AuthorizationConfig(BaseModel):
     code: str = Field(..., description="Authorization code")
 
 from api.config import configs, WIKI_AUTH_MODE, WIKI_AUTH_CODE
+from api.diagram_extract import extract_diagram_data
 
 @app.get("/lang/config")
 async def get_lang_config():
@@ -393,12 +395,16 @@ def generate_json_export(repo_url: str, pages: List[WikiPage]) -> str:
 # Import the simplified chat implementation
 from api.simple_chat import chat_completions_stream
 from api.websocket_wiki import handle_websocket_chat
+from api.diagram_explain import handle_diagram_explain
 
 # Add the chat_completions_stream endpoint to the main app
 app.add_api_route("/chat/completions/stream", chat_completions_stream, methods=["POST"])
 
 # Add the WebSocket endpoint
 app.add_websocket_route("/ws/chat", handle_websocket_chat)
+
+# Add the diagram explain WebSocket endpoint
+app.add_websocket_route("/ws/diagram/explain", handle_diagram_explain)
 
 # --- Wiki Cache Helper Functions ---
 
@@ -428,6 +434,16 @@ async def save_wiki_cache(data: WikiCacheRequest) -> bool:
     cache_path = get_wiki_cache_path(data.repo.owner, data.repo.repo, data.repo.type, data.language)
     logger.info(f"Attempting to save wiki cache. Path: {cache_path}")
     try:
+        # Extract structured diagram data from page content if present
+        for page in data.generated_pages.values():
+            if page.diagramData is None and page.content:
+                try:
+                    diagram_data = extract_diagram_data(page.content)
+                    if diagram_data:
+                        page.diagramData = diagram_data
+                except Exception as e:
+                    logger.warning(f"Failed to extract diagram data for page {page.id}: {e}")
+
         payload = WikiCacheData(
             wiki_structure=data.wiki_structure,
             generated_pages=data.generated_pages,

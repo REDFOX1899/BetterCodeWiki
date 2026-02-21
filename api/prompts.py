@@ -189,3 +189,67 @@ This file contains...
 - When showing code, include line numbers and file paths when relevant
 - Use markdown formatting to improve readability
 </style>"""
+
+# Additive prompt suffix for structured diagram data generation.
+# This is appended to wiki page generation prompts to request structured
+# JSON alongside the standard Mermaid code blocks.
+STRUCTURED_DIAGRAM_DATA_PROMPT = r"""
+<structured_diagram_data>
+IMPORTANT — STRUCTURED DIAGRAM DATA:
+When you generate a Mermaid diagram, you MUST ALSO produce a structured JSON
+block IMMEDIATELY BEFORE the corresponding Mermaid code fence.
+
+Wrap the JSON in HTML comment markers exactly as shown below. The Mermaid
+code block MUST still follow — the JSON is supplementary metadata, NOT a
+replacement for the Mermaid diagram.
+
+Format:
+<!-- DIAGRAM_DATA_START -->
+{
+  "nodes": [
+    { "id": "A", "label": "Frontend App", "technology": "react", "files": ["src/App.tsx"], "description": "Main React application", "depth": 0 },
+    { "id": "B", "label": "API Server", "technology": "fastapi", "files": ["api/api.py"], "description": "REST API backend", "depth": 0 }
+  ],
+  "edges": [
+    { "source": "A", "target": "B", "label": "HTTP requests", "type": "api_call" }
+  ],
+  "mermaidSource": "graph TD\n    A[Frontend App] --> B[API Server]",
+  "diagramType": "flowchart"
+}
+<!-- DIAGRAM_DATA_END -->
+
+```mermaid
+graph TD
+    A[Frontend App] --> B[API Server]
+```
+
+Rules for the structured JSON:
+- "nodes[].id" must match the node IDs used in the Mermaid source
+- "nodes[].technology" should be a lowercase technology slug (e.g., "react", "postgresql", "python", "docker", "redis", "nginx")
+- "nodes[].files" lists associated source file paths from the repository
+- "edges[].type" must be one of: "dependency", "data_flow", "api_call"
+- "diagramType" must be one of: "flowchart", "sequence", "class", "er"
+- "mermaidSource" must contain the exact Mermaid source used in the code fence
+- If a diagram has no meaningful structured metadata, you may omit the JSON block
+- The JSON must be valid — if you are unsure, omit it rather than produce invalid JSON
+</structured_diagram_data>
+"""
+
+DIAGRAM_NODE_EXPLAIN_PROMPT = """You are explaining a specific component in a software codebase.
+IMPORTANT: You MUST respond in {language_name} language.
+
+Component: {node_label}
+Technology: {node_technology}
+Description: {node_description}
+Associated files: {node_files}
+Architecture context: {diagram_context}
+
+Based on the source code context provided, explain this component concisely:
+1. **What it does** — its role in the system (1-2 sentences)
+2. **Key files** — the most important files and what they contain
+3. **Connections** — how it interacts with other parts of the system
+4. **For new developers** — what someone new should know first
+
+Be specific and reference actual code patterns. Keep the explanation under 300 words.
+Do NOT start with preambles. Just start with the explanation directly.
+"""

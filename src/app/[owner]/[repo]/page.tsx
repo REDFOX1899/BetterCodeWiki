@@ -20,6 +20,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { motion } from 'framer-motion';
 import { FaArrowLeft, FaBitbucket, FaBook, FaBookOpen, FaComments, FaDownload, FaExclamationTriangle, FaFileExport, FaFolder, FaGithub, FaGitlab, FaHome, FaProjectDiagram, FaSearch, FaSync, FaTimes } from 'react-icons/fa';
 import DependencyGraph from '@/components/DependencyGraph';
+import DiagramDetailPanel from '@/components/DiagramDetailPanel';
 // Define the WikiSection and WikiStructure types directly in this file
 // since the imported types don't have the sections and rootSections properties
 interface WikiSection {
@@ -396,6 +397,14 @@ export default function RepoWikiPage() {
   // State for Dependency Graph
   const [showGraph, setShowGraph] = useState(false);
   const wikiContentRef = useRef<HTMLDivElement | null>(null);
+
+  // State for Diagram Detail Panel (Click-to-Explain)
+  const [isDiagramPanelOpen, setIsDiagramPanelOpen] = useState(false);
+  const [selectedDiagramNode, setSelectedDiagramNode] = useState<{
+    nodeId: string;
+    label: string;
+    diagramData: import('@/types/diagramData').DiagramData | null;
+  } | null>(null);
 
   // Authentication state
   const [authRequired, setAuthRequired] = useState<boolean>(false);
@@ -2085,6 +2094,12 @@ IMPORTANT:
     }
   };
 
+  // Handler for diagram node clicks — opens the detail panel
+  const handleDiagramNodeClick = useCallback((nodeId: string, label: string, _rect: DOMRect, diagramData?: import('@/types/diagramData').DiagramData) => {
+    setSelectedDiagramNode({ nodeId, label, diagramData: diagramData ?? null });
+    setIsDiagramPanelOpen(true);
+  }, []);
+
   const [isModelSelectionModalOpen, setIsModelSelectionModalOpen] = useState(false);
 
   return (
@@ -2398,6 +2413,7 @@ IMPORTANT:
                     <div className="prose prose-zinc dark:prose-invert max-w-none">
                       <Markdown
                         content={generatedPages[currentPageId].content}
+                        onDiagramNodeClick={handleDiagramNodeClick}
                       />
                     </div>
 
@@ -2564,6 +2580,23 @@ IMPORTANT:
         isOpen={isSearchOpen}
         onClose={() => setIsSearchOpen(false)}
         onSelectPage={handlePageSelect}
+      />
+
+      {/* Diagram Detail Panel (Click-to-Explain) */}
+      <DiagramDetailPanel
+        isOpen={isDiagramPanelOpen}
+        onClose={() => { setIsDiagramPanelOpen(false); setSelectedDiagramNode(null); }}
+        nodeId={selectedDiagramNode?.nodeId ?? null}
+        nodeLabel={selectedDiagramNode?.label ?? null}
+        diagramData={selectedDiagramNode?.diagramData ?? null}
+        repoOwner={owner}
+        repoName={repo}
+        repoType={repoType as 'github' | 'gitlab' | 'bitbucket'}
+        repoUrl={effectiveRepoInfo.repoUrl || undefined}
+        repoToken={currentToken || undefined}
+        provider={selectedProviderState}
+        model={selectedModelState}
+        language={language}
       />
 
       {/* Dependency Graph */}

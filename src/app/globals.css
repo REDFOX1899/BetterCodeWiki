@@ -362,3 +362,42 @@ code, pre, .font-mono {
 [data-theme="dark"] .mermaid-diagram-container .svg-pan-zoom-control > g > g {
   fill: #f1f5f9 !important;
 }
+
+/* ============================================================
+   Click-to-Explain: Mermaid node interactivity styles
+   ============================================================ */
+
+/* Pointer cursor on nodes when clickable */
+.mermaid-clickable .node {
+  cursor: pointer;
+}
+
+/* Hover highlight on nodes */
+.mermaid-clickable .node:hover > rect,
+.mermaid-clickable .node:hover > circle,
+.mermaid-clickable .node:hover > ellipse,
+.mermaid-clickable .node:hover > polygon {
+  filter: brightness(1.15);
+  transition: filter 0.15s ease;
+}
+
+/* Selected node: blue ring */
+.mermaid-clickable .node.node-selected > rect,
+.mermaid-clickable .node.node-selected > circle,
+.mermaid-clickable .node.node-selected > ellipse,
+.mermaid-clickable .node.node-selected > polygon {
+  stroke: #3b82f6 !important;
+  stroke-width: 3px !important;
+  filter: drop-shadow(0 0 6px rgba(59, 130, 246, 0.5));
+}
+
+/* Dim unselected nodes when a node is selected */
+.mermaid-clickable.has-selected-node .node:not(.node-selected) {
+  opacity: 0.4;
+  transition: opacity 0.2s ease;
+}
+
+/* Keep selected node fully visible */
+.mermaid-clickable.has-selected-node .node.node-selected {
+  opacity: 1;
+}

@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import mermaid from 'mermaid';
+import { injectTechLogos } from '@/lib/mermaidLogoInjector';
 // We'll use dynamic import for svg-pan-zoom
 
 // Calming color palettes for diagrams — enhanced with multi-color node palette
@@ -576,6 +577,41 @@ interface MermaidProps {
   chart: string;
   className?: string;
   zoomingEnabled?: boolean;
+  diagramData?: import('../types/diagramData').DiagramData;
+  onNodeClick?: (nodeId: string, label: string, rect: DOMRect) => void;
+}
+
+/**
+ * Post-process DOM: annotate .node groups with data-node-id extracted from
+ * Mermaid's generated element IDs (e.g. "flowchart-A-0" -> nodeId "A").
+ */
+function annotateNodes(container: HTMLElement): void {
+  const nodes = container.querySelectorAll<SVGGElement>('.node');
+  for (const node of nodes) {
+    if (node.getAttribute('data-node-id')) continue;
+    const id = node.id || '';
+    // Mermaid ID formats: "flowchart-NodeId-123", "state-NodeId-123", etc.
+    const match = id.match(/^(?:flowchart|state|class|er)-(.+?)-\d+$/);
+    if (match) {
+      node.setAttribute('data-node-id', match[1]);
+    } else if (id) {
+      // Fallback: use the full ID
+      node.setAttribute('data-node-id', id);
+    }
+  }
+}
+
+/**
+ * Extract the text label from a .node group element.
+ */
+function getNodeLabel(nodeEl: Element): string {
+  // Try .nodeLabel first (foreignObject HTML labels)
+  const htmlLabel = nodeEl.querySelector('.nodeLabel');
+  if (htmlLabel?.textContent) return htmlLabel.textContent.trim();
+  // Fallback to <text> element
+  const textEl = nodeEl.querySelector('text');
+  if (textEl?.textContent) return textEl.textContent.trim();
+  return '';
 }
 
 // Full screen modal component for the diagram with svg-pan-zoom
@@ -583,11 +619,14 @@ const FullScreenModal: React.FC<{
   isOpen: boolean;
   onClose: () => void;
   svgHtml: string;
-}> = ({ isOpen, onClose, svgHtml }) => {
+  onNodeClick?: (nodeId: string, label: string, rect: DOMRect) => void;
+}> = ({ isOpen, onClose, svgHtml, onNodeClick }) => {
   const modalRef = useRef<HTMLDivElement>(null);
   const svgContainerRef = useRef<HTMLDivElement>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const panZoomRef = useRef<any>(null);
+  const mouseDownPosRef = useRef<{ x: number; y: number } | null>(null);
+  const selectedNodeRef = useRef<string | null>(null);
 
   // Close on Escape key
   useEffect(() => {
@@ -631,6 +670,15 @@ const FullScreenModal: React.FC<{
       const svgElement = svgContainerRef.current?.querySelector('svg');
       if (!svgElement) return;
 
+      // Inject tech logos before pan-zoom initialization
+      injectTechLogos(svgContainerRef.current!, isDarkMode());
+      // Annotate nodes for click detection
+      annotateNodes(svgContainerRef.current!);
+      // Add clickable styling when onNodeClick is provided
+      if (onNodeClick) {
+        svgContainerRef.current!.classList.add('mermaid-clickable');
+      }
+
       svgElement.style.maxWidth = 'none';
       svgElement.style.width = '100%';
       svgElement.style.height = '100%';
@@ -659,7 +707,7 @@ const FullScreenModal: React.FC<{
         panZoomRef.current = null;
       }
     };
-  }, [isOpen, svgHtml]);
+  }, [isOpen, svgHtml, onNodeClick]);
 
   const handleZoomIn = () => { panZoomRef.current?.zoomIn(); };
   const handleZoomOut = () => { panZoomRef.current?.zoomOut(); };
@@ -740,13 +788,48 @@ const FullScreenModal: React.FC<{
           className="flex-1 bg-background mermaid-diagram-container"
           style={{ minHeight: '500px' }}
           dangerouslySetInnerHTML={{ __html: svgHtml }}
+          onMouseDown={(e) => { mouseDownPosRef.current = { x: e.clientX, y: e.clientY }; }}
+          onMouseUp={(e) => {
+            if (!onNodeClick || !mouseDownPosRef.current) return;
+            const dx = e.clientX - mouseDownPosRef.current.x;
+            const dy = e.clientY - mouseDownPosRef.current.y;
+            // Only treat as click if mouse moved less than 5px (not a pan)
+            if (Math.sqrt(dx * dx + dy * dy) > 5) return;
+
+            const target = e.target as HTMLElement;
+            const nodeEl = target.closest('.node[data-node-id]');
+            if (nodeEl) {
+              const nodeId = nodeEl.getAttribute('data-node-id')!;
+              const label = getNodeLabel(nodeEl);
+              const rect = nodeEl.getBoundingClientRect();
+
+              // Update selection state
+              const container = svgContainerRef.current;
+              if (container) {
+                container.querySelectorAll('.node.node-selected').forEach(el => el.classList.remove('node-selected'));
+                nodeEl.classList.add('node-selected');
+                container.classList.add('has-selected-node');
+                selectedNodeRef.current = nodeId;
+              }
+              onNodeClick(nodeId, label, rect);
+            } else {
+              // Click on empty space -> clear selection
+              const container = svgContainerRef.current;
+              if (container) {
+                container.querySelectorAll('.node.node-selected').forEach(el => el.classList.remove('node-selected'));
+                container.classList.remove('has-selected-node');
+                selectedNodeRef.current = null;
+              }
+            }
+          }}
         />
       </div>
     </div>
   );
 };
 
-const Mermaid: React.FC<MermaidProps> = ({ chart, className = '', zoomingEnabled = false }) => {
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+const Mermaid: React.FC<MermaidProps> = ({ chart, className = '', zoomingEnabled = false, diagramData, onNodeClick }) => {
   const [svg, setSvg] = useState<string>('');
   const [error, setError] = useState<string | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -754,6 +837,8 @@ const Mermaid: React.FC<MermaidProps> = ({ chart, className = '', zoomingEnabled
   const mermaidRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const idRef = useRef(`mermaid-${Math.random().toString(36).substring(2, 9)}`);
+  const mouseDownPosRef = useRef<{ x: number; y: number } | null>(null);
+  const selectedNodeRef = useRef<string | null>(null);
 
   // Watch for theme changes (next-themes adds/removes .dark class or data-theme attr on <html>)
   useEffect(() => {
@@ -770,6 +855,22 @@ const Mermaid: React.FC<MermaidProps> = ({ chart, className = '', zoomingEnabled
     });
     return () => observer.disconnect();
   }, []);
+
+  // Inject tech stack logos and annotate nodes after SVG is rendered in the DOM
+  useEffect(() => {
+    if (!svg || !containerRef.current) return;
+    // Use requestAnimationFrame to ensure the DOM has been painted
+    const rafId = requestAnimationFrame(() => {
+      if (containerRef.current) {
+        injectTechLogos(containerRef.current, isDarkMode());
+        annotateNodes(containerRef.current);
+        if (onNodeClick) {
+          containerRef.current.classList.add('mermaid-clickable');
+        }
+      }
+    });
+    return () => cancelAnimationFrame(rafId);
+  }, [svg, onNodeClick]);
 
   // Initialize pan-zoom functionality when SVG is rendered or modal closes
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -918,6 +1019,38 @@ const Mermaid: React.FC<MermaidProps> = ({ chart, className = '', zoomingEnabled
             className={`mermaid-diagram-container flex justify-center overflow-auto text-center my-4 rounded-lg transition-colors border border-border/40 ${className} ${zoomingEnabled ? "h-full" : "min-h-[300px] p-4 cursor-pointer hover:border-primary/30"}`}
             dangerouslySetInnerHTML={{ __html: svg }}
             onClick={zoomingEnabled ? undefined : handleDiagramClick}
+            onMouseDown={(e) => { mouseDownPosRef.current = { x: e.clientX, y: e.clientY }; }}
+            onMouseUp={(e) => {
+              if (!onNodeClick || !mouseDownPosRef.current) return;
+              const dx = e.clientX - mouseDownPosRef.current.x;
+              const dy = e.clientY - mouseDownPosRef.current.y;
+              if (Math.sqrt(dx * dx + dy * dy) > 5) return;
+
+              const target = e.target as HTMLElement;
+              const nodeEl = target.closest('.node[data-node-id]');
+              if (nodeEl) {
+                e.stopPropagation(); // Prevent fullscreen open
+                const nodeId = nodeEl.getAttribute('data-node-id')!;
+                const label = getNodeLabel(nodeEl);
+                const rect = nodeEl.getBoundingClientRect();
+
+                const container = containerRef.current;
+                if (container) {
+                  container.querySelectorAll('.node.node-selected').forEach(el => el.classList.remove('node-selected'));
+                  nodeEl.classList.add('node-selected');
+                  container.classList.add('has-selected-node');
+                  selectedNodeRef.current = nodeId;
+                }
+                onNodeClick(nodeId, label, rect);
+              } else {
+                const container = containerRef.current;
+                if (container) {
+                  container.querySelectorAll('.node.node-selected').forEach(el => el.classList.remove('node-selected'));
+                  container.classList.remove('has-selected-node');
+                  selectedNodeRef.current = null;
+                }
+              }
+            }}
             title={zoomingEnabled ? undefined : "Click to view fullscreen"}
           />
 
@@ -942,6 +1075,7 @@ const Mermaid: React.FC<MermaidProps> = ({ chart, className = '', zoomingEnabled
         isOpen={isFullscreen}
         onClose={() => setIsFullscreen(false)}
         svgHtml={svg}
+        onNodeClick={onNodeClick}
       />
     </>
   );

@@ -1,3 +1,5 @@
+import type { DiagramData } from '../diagramData';
+
 // Wiki Interfaces
 export interface WikiPage {
   id: string;
@@ -6,6 +8,7 @@ export interface WikiPage {
   filePaths: string[];
   importance: 'high' | 'medium' | 'low';
   relatedPages: string[];
+  diagramData?: DiagramData[] | null;
   // New fields for hierarchy
   parentId?: string;
   isSection?: boolean;

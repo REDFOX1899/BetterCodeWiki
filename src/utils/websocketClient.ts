@@ -83,3 +83,57 @@ export const closeWebSocket = (ws: WebSocket | null): void => {
     ws.close();
   }
 };
+
+// --- Diagram Explain WebSocket ---
+
+const getDiagramExplainWebSocketUrl = () => {
+  const baseUrl = SERVER_BASE_URL;
+  const wsBaseUrl = baseUrl.replace(/^http/, 'ws');
+  return `${wsBaseUrl}/ws/diagram/explain`;
+};
+
+export interface DiagramExplainRequest {
+  repo_url: string;
+  type?: string;
+  node_id: string;
+  node_label: string;
+  node_technology?: string;
+  node_files?: string[];
+  node_description?: string;
+  diagram_context?: string;
+  provider?: string;
+  model?: string;
+  language?: string;
+  token?: string;
+}
+
+/**
+ * Creates a WebSocket connection for diagram node AI explanations
+ */
+export const createDiagramExplainWebSocket = (
+  request: DiagramExplainRequest,
+  onMessage: (message: string) => void,
+  onError: (error: Event) => void,
+  onClose: () => void
+): WebSocket => {
+  const ws = new WebSocket(getDiagramExplainWebSocketUrl());
+
+  ws.onopen = () => {
+    ws.send(JSON.stringify(request));
+  };
+
+  ws.onmessage = (event) => {
+    onMessage(event.data);
+  };
+
+  ws.onerror = (error) => {
+    console.error('Diagram explain WebSocket error:', error);
+    onError(error);
+  };
+
+  ws.onclose = () => {
+    onClose();
+  };
+
+  return ws;
+};
