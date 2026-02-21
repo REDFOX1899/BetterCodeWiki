@@ -5,8 +5,10 @@ from collections import defaultdict
 from fastapi import FastAPI, HTTPException, Query, Request, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
+from starlette.middleware.gzip import GZipMiddleware
 from typing import List, Optional, Dict, Any, Literal
 import json
+import hashlib
 from datetime import datetime
 from pydantic import BaseModel, Field
 import google.generativeai as genai
@@ -114,6 +116,10 @@ app.add_middleware(
     allow_methods=["*"],  # Allows all methods
     allow_headers=["*"],  # Allows all headers
 )
+
+# GZip compression for responses >= 1KB (added after CORS so it runs inside
+# the CORS middleware — Starlette processes middleware in LIFO order)
+app.add_middleware(GZipMiddleware, minimum_size=1000)
 
 # Helper function to get adalflow root path
 def get_adalflow_default_root_path():
@@ -263,14 +269,21 @@ def _load_wiki_templates() -> Dict[str, Any]:
 async def get_wiki_templates():
     """Return available wiki template configurations."""
     try:
-        return _load_wiki_templates()
+        data = _load_wiki_templates()
+        return JSONResponse(
+            content=data,
+            headers={"Cache-Control": "public, max-age=3600"}
+        )
     except Exception as e:
         logger.error(f"Error loading wiki templates: {e}")
         raise HTTPException(status_code=500, detail="Failed to load wiki templates")
 
 @app.get("/lang/config")
 async def get_lang_config():
-    return configs["lang_config"]
+    return JSONResponse(
+        content=configs["lang_config"],
+        headers={"Cache-Control": "public, max-age=3600"}
+    )
 
 @app.get("/auth/status")
 async def get_auth_status():
@@ -327,12 +340,15 @@ async def get_model_config():
             providers=providers,
             defaultProvider=default_provider
         )
-        return config
+        return JSONResponse(
+            content=config.model_dump(),
+            headers={"Cache-Control": "public, max-age=3600"}
+        )
 
     except Exception as e:
         logger.error(f"Error creating model configuration: {str(e)}")
         # Return some default configuration in case of error
-        return ModelConfig(
+        fallback = ModelConfig(
             providers=[
                 Provider(
                     id="google",
@@ -344,6 +360,10 @@ async def get_model_config():
                 )
             ],
             defaultProvider="google"
+        )
+        return JSONResponse(
+            content=fallback.model_dump(),
+            headers={"Cache-Control": "public, max-age=3600"}
         )
 
 @app.post("/export/wiki")
@@ -411,27 +431,27 @@ async def get_local_repo_structure(path: str = Query(None, description="Path to 
 
     try:
         logger.info(f"Processing local repository at: {path}")
-        file_tree_lines = []
-        readme_content = ""
 
-        for root, dirs, files in os.walk(path):
-            # Exclude hidden dirs/files and virtual envs
-            dirs[:] = [d for d in dirs if not d.startswith('.') and d != '__pycache__' and d != 'node_modules' and d != '.venv']
-            for file in files:
-                if file.startswith('.') or file == '__init__.py' or file == '.DS_Store':
-                    continue
-                rel_dir = os.path.relpath(root, path)
-                rel_file = os.path.join(rel_dir, file) if rel_dir != '.' else file
-                file_tree_lines.append(rel_file)
-                # Find README.md (case-insensitive)
-                if file.lower() == 'readme.md' and not readme_content:
-                    try:
-                        with open(os.path.join(root, file), 'r', encoding='utf-8') as f:
-                            readme_content = f.read()
-                    except Exception as e:
-                        logger.warning(f"Could not read README.md: {str(e)}")
-                        readme_content = ""
+        def _scan_local_repo(repo_path):
+            file_tree_lines = []
+            readme_content = ""
+            for root, dirs, files in os.walk(repo_path):
+                dirs[:] = [d for d in dirs if not d.startswith('.') and d != '__pycache__' and d != 'node_modules' and d != '.venv']
+                for file in files:
+                    if file.startswith('.') or file == '__init__.py' or file == '.DS_Store':
+                        continue
+                    rel_dir = os.path.relpath(root, repo_path)
+                    rel_file = os.path.join(rel_dir, file) if rel_dir != '.' else file
+                    file_tree_lines.append(rel_file)
+                    if file.lower() == 'readme.md' and not readme_content:
+                        try:
+                            with open(os.path.join(root, file), 'r', encoding='utf-8') as f:
+                                readme_content = f.read()
+                        except Exception as e:
+                            readme_content = ""
+            return file_tree_lines, readme_content
 
+        file_tree_lines, readme_content = await asyncio.to_thread(_scan_local_repo, path)
         file_tree_str = '\n'.join(sorted(file_tree_lines))
         return {"file_tree": file_tree_str, "readme": readme_content}
     except Exception as e:
@@ -642,19 +662,104 @@ async def parse_wiki_structure_endpoint(request: ParseStructureRequest):
 WIKI_CACHE_DIR = os.path.join(get_adalflow_default_root_path(), "wikicache")
 os.makedirs(WIKI_CACHE_DIR, exist_ok=True)
 
+# --- Async File I/O Helpers ---
+
+async def _read_json_async(path: str):
+    """Read and parse a JSON file without blocking the event loop."""
+    def _read():
+        with open(path, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    return await asyncio.to_thread(_read)
+
+async def _write_json_async(path: str, data, indent: int = 2):
+    """Write data as JSON to a file without blocking the event loop."""
+    def _write():
+        with open(path, 'w', encoding='utf-8') as f:
+            json.dump(data, f, indent=indent, ensure_ascii=False)
+    await asyncio.to_thread(_write)
+
+async def _read_file_async(path: str) -> str:
+    """Read a text file without blocking the event loop."""
+    def _read():
+        with open(path, 'r', encoding='utf-8') as f:
+            return f.read()
+    return await asyncio.to_thread(_read)
+
+# --- Projects Index Helpers ---
+
+_PROJECTS_INDEX_PATH = os.path.join(WIKI_CACHE_DIR, "_index.json")
+
+async def _update_projects_index(owner: str, repo: str, repo_type: str, language: str, filename: str):
+    """Update the lightweight projects index after a wiki cache is saved or deleted."""
+    try:
+        index = {}
+        if os.path.exists(_PROJECTS_INDEX_PATH):
+            index = await _read_json_async(_PROJECTS_INDEX_PATH)
+
+        file_path = os.path.join(WIKI_CACHE_DIR, filename)
+        if os.path.exists(file_path):
+            stats = await asyncio.to_thread(os.stat, file_path)
+            index[filename] = {
+                "owner": owner,
+                "repo": repo,
+                "repo_type": repo_type,
+                "language": language,
+                "submittedAt": int(stats.st_mtime * 1000),
+            }
+        else:
+            # File was deleted — remove from index
+            index.pop(filename, None)
+
+        await _write_json_async(_PROJECTS_INDEX_PATH, index)
+    except Exception as e:
+        logger.warning(f"Failed to update projects index: {e}")
+
+async def _rebuild_projects_index() -> dict:
+    """Rebuild the projects index from a full directory scan (fallback)."""
+    index = {}
+    if not os.path.exists(WIKI_CACHE_DIR):
+        return index
+    filenames = await asyncio.to_thread(os.listdir, WIKI_CACHE_DIR)
+    for filename in filenames:
+        if filename.startswith("deepwiki_cache_") and filename.endswith(".json"):
+            file_path = os.path.join(WIKI_CACHE_DIR, filename)
+            try:
+                stats = await asyncio.to_thread(os.stat, file_path)
+                parts = filename.replace("deepwiki_cache_", "").replace(".json", "").split('_')
+                if len(parts) >= 4:
+                    repo_type = parts[0]
+                    owner = parts[1]
+                    language = parts[-1]
+                    repo = "_".join(parts[2:-1])
+                    index[filename] = {
+                        "owner": owner,
+                        "repo": repo,
+                        "repo_type": repo_type,
+                        "language": language,
+                        "submittedAt": int(stats.st_mtime * 1000),
+                    }
+            except Exception as e:
+                logger.error(f"Error processing file {file_path} during index rebuild: {e}")
+                continue
+    # Persist the rebuilt index
+    try:
+        await _write_json_async(_PROJECTS_INDEX_PATH, index)
+    except Exception:
+        pass
+    return index
+
 def get_wiki_cache_path(owner: str, repo: str, repo_type: str, language: str) -> str:
     """Generates the file path for a given wiki cache."""
     filename = f"deepwiki_cache_{repo_type}_{owner}_{repo}_{language}.json"
     return os.path.join(WIKI_CACHE_DIR, filename)
 
 async def read_wiki_cache(owner: str, repo: str, repo_type: str, language: str) -> Optional[WikiCacheData]:
-    """Reads wiki cache data from the file system."""
+    """Reads wiki cache data from the file system (non-blocking)."""
     cache_path = get_wiki_cache_path(owner, repo, repo_type, language)
     if os.path.exists(cache_path):
         try:
-            with open(cache_path, 'r', encoding='utf-8') as f:
-                data = json.load(f)
-                return WikiCacheData(**data)
+            data = await _read_json_async(cache_path)
+            return WikiCacheData(**data)
         except Exception as e:
             logger.error(f"Error reading wiki cache from {cache_path}: {e}")
             return None
@@ -693,9 +798,15 @@ async def save_wiki_cache(data: WikiCacheRequest) -> bool:
 
 
         logger.info(f"Writing cache file to: {cache_path}")
-        with open(cache_path, 'w', encoding='utf-8') as f:
-            json.dump(payload.model_dump(), f, indent=2)
+        await _write_json_async(cache_path, payload.model_dump())
         logger.info(f"Wiki cache successfully saved to {cache_path}")
+
+        # Update the lightweight projects index
+        filename = os.path.basename(cache_path)
+        await _update_projects_index(
+            data.repo.owner, data.repo.repo, data.repo.type, data.language, filename
+        )
+
         return True
     except IOError as e:
         logger.error(f"IOError saving wiki cache to {cache_path}: {e.strerror} (errno: {e.errno})", exc_info=True)
@@ -708,6 +819,7 @@ async def save_wiki_cache(data: WikiCacheRequest) -> bool:
 
 @app.get("/api/wiki_cache", response_model=Optional[WikiCacheData])
 async def get_cached_wiki(
+    request: Request,
     owner: str = Query(..., description="Repository owner"),
     repo: str = Query(..., description="Repository name"),
     repo_type: str = Query(..., description="Repository type (e.g., github, gitlab)"),
@@ -715,6 +827,7 @@ async def get_cached_wiki(
 ):
     """
     Retrieves cached wiki data (structure and generated pages) for a repository.
+    Supports ETag/If-None-Match for conditional caching.
     """
     # Language validation
     supported_langs = configs["lang_config"]["supported_languages"]
@@ -724,10 +837,25 @@ async def get_cached_wiki(
     logger.info(f"Attempting to retrieve wiki cache for {owner}/{repo} ({repo_type}), lang: {language}")
     cached_data = await read_wiki_cache(owner, repo, repo_type, language)
     if cached_data:
-        return cached_data
+        # Compute ETag from serialized content
+        data_json = json.dumps(cached_data.model_dump(), sort_keys=True, default=str)
+        content_hash = hashlib.md5(data_json.encode()).hexdigest()
+        etag = f'"{content_hash}"'
+
+        # Check If-None-Match header for conditional requests
+        if_none_match = request.headers.get("if-none-match")
+        if if_none_match and if_none_match == etag:
+            return Response(status_code=304, headers={"ETag": etag})
+
+        return JSONResponse(
+            content=cached_data.model_dump(),
+            headers={
+                "ETag": etag,
+                "Cache-Control": "public, max-age=300",
+            }
+        )
     else:
         # Return 200 with null body if not found, as frontend expects this behavior
-        # Or, raise HTTPException(status_code=404, detail="Wiki cache not found") if preferred
         logger.info(f"Wiki cache not found for {owner}/{repo} ({repo_type}), lang: {language}")
         return None
 
@@ -775,8 +903,13 @@ async def delete_wiki_cache(
 
     if os.path.exists(cache_path):
         try:
-            os.remove(cache_path)
+            await asyncio.to_thread(os.remove, cache_path)
             logger.info(f"Successfully deleted wiki cache: {cache_path}")
+
+            # Update the projects index to remove this entry
+            filename = os.path.basename(cache_path)
+            await _update_projects_index(owner, repo, repo_type, language, filename)
+
             return {"message": f"Wiki cache for {owner}/{repo} ({language}) deleted successfully"}
         except Exception as e:
             logger.error(f"Error deleting wiki cache {cache_path}: {e}")
@@ -1029,8 +1162,7 @@ You MUST respond in {language_name} language."""
     try:
         cache_dict = cached.model_dump()
         cache_dict["generated_at"] = datetime.now().isoformat()
-        with open(cache_path, "w", encoding="utf-8") as f:
-            json.dump(cache_dict, f, indent=2)
+        await _write_json_async(cache_path, cache_dict)
         logger.info(f"Cache updated after page regeneration: {cache_path}")
     except Exception as e:
         logger.error(f"Failed to update cache after regeneration: {e}")
@@ -1082,51 +1214,40 @@ async def root():
 async def get_processed_projects():
     """
     Lists all processed projects found in the wiki cache directory.
-    Projects are identified by files named like: deepwiki_cache_{repo_type}_{owner}_{repo}_{language}.json
+    Uses a lightweight _index.json file for fast lookups. Falls back to
+    a full directory scan if the index is missing or stale, then rebuilds it.
     """
-    project_entries: List[ProcessedProjectEntry] = []
-    # WIKI_CACHE_DIR is already defined globally in the file
-
     try:
         if not os.path.exists(WIKI_CACHE_DIR):
             logger.info(f"Cache directory {WIKI_CACHE_DIR} not found. Returning empty list.")
             return []
 
-        logger.info(f"Scanning for project cache files in: {WIKI_CACHE_DIR}")
-        filenames = await asyncio.to_thread(os.listdir, WIKI_CACHE_DIR) # Use asyncio.to_thread for os.listdir
+        # Try reading the pre-built index first
+        index: Optional[dict] = None
+        if os.path.exists(_PROJECTS_INDEX_PATH):
+            try:
+                index = await _read_json_async(_PROJECTS_INDEX_PATH)
+            except Exception as e:
+                logger.warning(f"Could not read projects index, will rebuild: {e}")
 
-        for filename in filenames:
-            if filename.startswith("deepwiki_cache_") and filename.endswith(".json"):
-                file_path = os.path.join(WIKI_CACHE_DIR, filename)
-                try:
-                    stats = await asyncio.to_thread(os.stat, file_path) # Use asyncio.to_thread for os.stat
-                    parts = filename.replace("deepwiki_cache_", "").replace(".json", "").split('_')
+        # Fallback: rebuild from directory scan
+        if index is None:
+            logger.info("Projects index not found or unreadable — rebuilding from directory scan.")
+            index = await _rebuild_projects_index()
 
-                    # Expecting repo_type_owner_repo_language
-                    # Example: deepwiki_cache_github_AsyncFuncAI_deepwiki-open_en.json
-                    # parts = [github, AsyncFuncAI, deepwiki-open, en]
-                    if len(parts) >= 4:
-                        repo_type = parts[0]
-                        owner = parts[1]
-                        language = parts[-1] # language is the last part
-                        repo = "_".join(parts[2:-1]) # repo can contain underscores
-
-                        project_entries.append(
-                            ProcessedProjectEntry(
-                                id=filename,
-                                owner=owner,
-                                repo=repo,
-                                name=f"{owner}/{repo}",
-                                repo_type=repo_type,
-                                submittedAt=int(stats.st_mtime * 1000), # Convert to milliseconds
-                                language=language
-                            )
-                        )
-                    else:
-                        logger.warning(f"Could not parse project details from filename: {filename}")
-                except Exception as e:
-                    logger.error(f"Error processing file {file_path}: {e}")
-                    continue # Skip this file on error
+        project_entries: List[ProcessedProjectEntry] = []
+        for filename, meta in index.items():
+            project_entries.append(
+                ProcessedProjectEntry(
+                    id=filename,
+                    owner=meta["owner"],
+                    repo=meta["repo"],
+                    name=f"{meta['owner']}/{meta['repo']}",
+                    repo_type=meta["repo_type"],
+                    submittedAt=meta["submittedAt"],
+                    language=meta["language"],
+                )
+            )
 
         # Sort by most recent first
         project_entries.sort(key=lambda p: p.submittedAt, reverse=True)
