@@ -23,3 +23,5 @@ class DiagramData(BaseModel):
     edges: List[DiagramEdge]
     mermaidSource: str
     diagramType: Literal['flowchart', 'sequence', 'class', 'er'] = 'flowchart'
+    layerLevel: Optional[int] = None  # 1 = simple overview, 2 = detailed
+    simplifiedMermaidSource: Optional[str] = None  # Pre-generated simple version

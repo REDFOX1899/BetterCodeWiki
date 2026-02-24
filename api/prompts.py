@@ -203,24 +203,38 @@ Wrap the JSON in HTML comment markers exactly as shown below. The Mermaid
 code block MUST still follow — the JSON is supplementary metadata, NOT a
 replacement for the Mermaid diagram.
 
+The JSON MUST include a "simplifiedMermaidSource" field containing a simplified
+overview version of the diagram. This simplified version is critical for users
+who want a high-level understanding at a glance.
+
 Format:
 <!-- DIAGRAM_DATA_START -->
 {
   "nodes": [
     { "id": "A", "label": "Frontend App", "technology": "react", "files": ["src/App.tsx"], "description": "Main React application", "depth": 0 },
-    { "id": "B", "label": "API Server", "technology": "fastapi", "files": ["api/api.py"], "description": "REST API backend", "depth": 0 }
+    { "id": "B", "label": "API Server", "technology": "fastapi", "files": ["api/api.py"], "description": "REST API backend", "depth": 0 },
+    { "id": "C", "label": "Database", "technology": "postgresql", "files": ["db/models.py"], "description": "Data persistence layer", "depth": 0 },
+    { "id": "D", "label": "Auth Service", "technology": "python", "files": ["api/auth.py"], "description": "Authentication and authorization", "depth": 1 },
+    { "id": "E", "label": "Cache Layer", "technology": "redis", "files": ["api/cache.py"], "description": "Response caching", "depth": 1 }
   ],
   "edges": [
-    { "source": "A", "target": "B", "label": "HTTP requests", "type": "api_call" }
+    { "source": "A", "target": "B", "label": "HTTP requests", "type": "api_call" },
+    { "source": "B", "target": "C", "label": "queries", "type": "data_flow" },
+    { "source": "B", "target": "D", "label": "validates tokens", "type": "dependency" },
+    { "source": "B", "target": "E", "label": "reads/writes", "type": "data_flow" }
   ],
-  "mermaidSource": "graph TD\n    A[Frontend App] --> B[API Server]",
-  "diagramType": "flowchart"
+  "mermaidSource": "graph TD\n    A[Frontend App] -->|HTTP requests| B[API Server]\n    B -->|queries| C[Database]\n    B -->|validates tokens| D[Auth Service]\n    B -->|reads/writes| E[Cache Layer]",
+  "diagramType": "flowchart",
+  "simplifiedMermaidSource": "graph TD\n    A[Frontend App] --> B[API Server]\n    B --> C[Database]\n    B --> D[External Services]"
 }
 <!-- DIAGRAM_DATA_END -->
 
 ```mermaid
 graph TD
-    A[Frontend App] --> B[API Server]
+    A[Frontend App] -->|HTTP requests| B[API Server]
+    B -->|queries| C[Database]
+    B -->|validates tokens| D[Auth Service]
+    B -->|reads/writes| E[Cache Layer]
 ```
 
 Rules for the structured JSON:
@@ -232,6 +246,16 @@ Rules for the structured JSON:
 - "mermaidSource" must contain the exact Mermaid source used in the code fence
 - If a diagram has no meaningful structured metadata, you may omit the JSON block
 - The JSON must be valid — if you are unsure, omit it rather than produce invalid JSON
+
+Rules for "simplifiedMermaidSource" (the simplified overview diagram):
+- MUST contain a valid Mermaid diagram with MAXIMUM 5-8 nodes
+- Show ONLY the highest-level architectural components (think "executive summary")
+- Use clear, short labels (2-4 words each, e.g., "User Interface", "API Layer", "Database")
+- Use simple relationships WITHOUT detailed edge labels (just arrows, no labels)
+- Collapse related sub-components into a single node (e.g., merge "Auth Service" + "User Service" into "Backend Services")
+- The simplified diagram must be immediately understandable at a glance by a non-technical person
+- If the full diagram already has 8 or fewer nodes, simplifiedMermaidSource can match mermaidSource
+- Do NOT include implementation details, file names, or technical jargon in the simplified version
 </structured_diagram_data>
 """
 

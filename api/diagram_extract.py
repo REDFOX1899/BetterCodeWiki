@@ -18,6 +18,36 @@ _PATTERN = re.compile(
     re.DOTALL,
 )
 
+# Lightweight regex to find node IDs with shape declarations in Mermaid source.
+# Matches patterns like A[Label], B(Label), C{Label}, D((Label)), etc.
+_MERMAID_NODE_RE = re.compile(r'\b(\w+)\s*[\[\(\{<]')
+
+# Mermaid keywords to exclude from node counting.
+_MERMAID_KEYWORDS = frozenset({
+    'graph', 'flowchart', 'sequenceDiagram', 'classDiagram', 'erDiagram',
+    'TD', 'TB', 'LR', 'RL', 'BT', 'subgraph', 'end', 'style', 'class',
+    'click', 'linkStyle', 'classDef',
+})
+
+
+def _count_mermaid_nodes(mermaid_src: str) -> int:
+    """Return a rough count of unique node declarations in a Mermaid source string."""
+    matches = _MERMAID_NODE_RE.findall(mermaid_src)
+    return len({m for m in matches if m not in _MERMAID_KEYWORDS})
+
+
+def _validate_simplified(simplified: str, full: str) -> bool:
+    """Check that the simplified diagram has fewer (or equal) nodes than the full one."""
+    simplified_count = _count_mermaid_nodes(simplified)
+    full_count = _count_mermaid_nodes(full)
+    if simplified_count > full_count:
+        logger.warning(
+            "Simplified diagram has more nodes (%d) than the full diagram (%d); discarding",
+            simplified_count, full_count,
+        )
+        return False
+    return True
+
 
 def extract_diagram_data(content: str) -> List[Dict]:
     """Extract all structured diagram JSON blocks from wiki page content.
@@ -38,7 +68,14 @@ def extract_diagram_data(content: str) -> List[Dict]:
             try:
                 data = json.loads(raw_json)
                 validated = DiagramData(**data)
-                results.append(validated.model_dump())
+                dumped = validated.model_dump()
+
+                # Validate simplified diagram if present
+                if dumped.get("simplifiedMermaidSource") and dumped.get("mermaidSource"):
+                    if not _validate_simplified(dumped["simplifiedMermaidSource"], dumped["mermaidSource"]):
+                        dumped["simplifiedMermaidSource"] = None
+
+                results.append(dumped)
             except json.JSONDecodeError as exc:
                 logger.warning("Skipping diagram data block with invalid JSON: %s", exc)
             except Exception as exc:
