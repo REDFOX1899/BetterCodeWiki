@@ -435,6 +435,24 @@ Remember:
       return;
     }
 
+    // Wait for provider to be resolved if it's still empty (async fetch in useModelSelection)
+    let resolvedProvider = selectedProviderState;
+    if (!resolvedProvider) {
+      console.log('Provider not yet resolved, fetching default...');
+      try {
+        const res = await fetch('/api/models/config');
+        if (res.ok) {
+          const data = await res.json();
+          resolvedProvider = data.defaultProvider || 'google';
+        } else {
+          resolvedProvider = 'google';
+        }
+      } catch {
+        resolvedProvider = 'google';
+      }
+      console.log(`Provider resolved to: ${resolvedProvider}`);
+    }
+
     try {
       setStructureRequestInProgress(true);
       setGenerationPhase('planning');
@@ -580,7 +598,7 @@ IMPORTANT:
         }]
       };
 
-      addTokensToRequestBody(requestBody, currentToken, effectiveRepoInfo.type, selectedProviderState, selectedModelState, isCustomSelectedModelState, customSelectedModelState, language, modelExcludedDirs, modelExcludedFiles, modelIncludedDirs, modelIncludedFiles);
+      addTokensToRequestBody(requestBody, currentToken, effectiveRepoInfo.type, resolvedProvider, selectedModelState, isCustomSelectedModelState, customSelectedModelState, language, modelExcludedDirs, modelExcludedFiles, modelIncludedDirs, modelIncludedFiles);
 
       let responseText = '';
 

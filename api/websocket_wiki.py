@@ -138,6 +138,14 @@ async def handle_websocket_chat(websocket: WebSocket):
         request_data = await websocket.receive_json()
         request = ChatCompletionRequest(**request_data)
 
+        # Fall back to default provider if none specified
+        if not request.provider:
+            from api.config import configs as app_configs
+            request.provider = app_configs.get("default_provider", "google")
+            logger.info(f"No provider specified, falling back to default: {request.provider}")
+        if not request.model:
+            request.model = None  # Let get_model_config pick the default
+
         # Check if request contains very large input
         input_too_large = False
         if request.messages and len(request.messages) > 0:
