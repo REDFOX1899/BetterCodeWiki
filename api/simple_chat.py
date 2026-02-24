@@ -77,6 +77,14 @@ class ChatCompletionRequest(BaseModel):
 async def chat_completions_stream(request: ChatCompletionRequest):
     """Stream a chat completion response directly using Google Generative AI"""
     try:
+        # Fall back to default provider if none specified
+        if not request.provider:
+            from api.config import configs as app_configs
+            request.provider = app_configs.get("default_provider", "google")
+            logger.info(f"No provider specified, falling back to default: {request.provider}")
+        if not request.model:
+            request.model = None  # Let get_model_config pick the default
+
         # Check if request contains very large input
         input_too_large = False
         if request.messages and len(request.messages) > 0:

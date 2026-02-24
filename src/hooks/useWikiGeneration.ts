@@ -154,6 +154,22 @@ export function useWikiGeneration(params: UseWikiGenerationParams): UseWikiGener
 
         activeContentRequests.set(page.id, true);
 
+        // Resolve provider if still empty (race condition with useModelSelection async fetch)
+        let resolvedProvider = selectedProviderState;
+        if (!resolvedProvider) {
+          try {
+            const res = await fetch('/api/models/config');
+            if (res.ok) {
+              const data = await res.json();
+              resolvedProvider = data.defaultProvider || 'google';
+            } else {
+              resolvedProvider = 'google';
+            }
+          } catch {
+            resolvedProvider = 'google';
+          }
+        }
+
         if (!owner || !repo) {
           throw new Error('Invalid repository information. Owner and repo name are required.');
         }
@@ -313,7 +329,7 @@ Remember:
           }]
         };
 
-        addTokensToRequestBody(requestBody, currentToken, effectiveRepoInfo.type, selectedProviderState, selectedModelState, isCustomSelectedModelState, customSelectedModelState, language, modelExcludedDirs, modelExcludedFiles, modelIncludedDirs, modelIncludedFiles);
+        addTokensToRequestBody(requestBody, currentToken, effectiveRepoInfo.type, resolvedProvider, selectedModelState, isCustomSelectedModelState, customSelectedModelState, language, modelExcludedDirs, modelExcludedFiles, modelIncludedDirs, modelIncludedFiles);
 
         let content = '';
 
@@ -1042,6 +1058,22 @@ IMPORTANT:
     try {
       const modelToUse = isCustomSelectedModelState ? customSelectedModelState : selectedModelState;
 
+      // Resolve provider if still empty
+      let resolvedProvider = selectedProviderState;
+      if (!resolvedProvider) {
+        try {
+          const res = await fetch('/api/models/config');
+          if (res.ok) {
+            const data = await res.json();
+            resolvedProvider = data.defaultProvider || 'google';
+          } else {
+            resolvedProvider = 'google';
+          }
+        } catch {
+          resolvedProvider = 'google';
+        }
+      }
+
       const response = await fetch('/api/wiki/regenerate_page', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1051,7 +1083,7 @@ IMPORTANT:
           repo_type: repoType,
           page_id: pageId,
           language,
-          provider: selectedProviderState,
+          provider: resolvedProvider,
           model: modelToUse,
           custom_model: isCustomSelectedModelState ? customSelectedModelState : undefined,
           access_token: currentToken || undefined,
