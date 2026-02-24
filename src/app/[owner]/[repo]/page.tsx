@@ -13,9 +13,9 @@ import { useLanguage } from '@/contexts/LanguageContext';
 import { RepoInfo } from '@/types/repoinfo';
 import Link from 'next/link';
 import { useParams, useSearchParams } from 'next/navigation';
-import React, { useCallback, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
-import { ArrowLeft, Book, BookOpen, MessageSquare, AlertTriangle, Home, Network, Search, RefreshCw, X } from 'lucide-react';
+import { ArrowLeft, Book, BookOpen, List, MessageSquare, AlertTriangle, Home, Network, Search, RefreshCw, X } from 'lucide-react';
 import DependencyGraph from '@/components/DependencyGraph';
 import WikiSidebarSkeleton from '@/components/skeletons/WikiSidebarSkeleton';
 import WikiContentSkeleton from '@/components/skeletons/WikiContentSkeleton';
@@ -140,6 +140,9 @@ export default function RepoWikiPage() {
   // State for Dependency Graph
   const [showGraph, setShowGraph] = useState(false);
   const wikiContentRef = useRef<HTMLDivElement | null>(null);
+
+  // State for floating TOC (non-XL screens)
+  const [isFloatingTocOpen, setIsFloatingTocOpen] = useState(false);
 
   // State for Diagram Detail Panel (Click-to-Explain)
   const [isDiagramPanelOpen, setIsDiagramPanelOpen] = useState(false);
@@ -322,8 +325,16 @@ export default function RepoWikiPage() {
   const handlePageSelect = (pageId: string) => {
     if (currentPageId != pageId) {
       setCurrentPageId(pageId);
+      setIsFloatingTocOpen(false);
     }
   };
+
+  // Auto-select the first page when wiki loads without a selection
+  useEffect(() => {
+    if (wikiStructure && !currentPageId && wikiStructure.pages.length > 0) {
+      setCurrentPageId(wikiStructure.pages[0].id);
+    }
+  }, [wikiStructure, currentPageId, setCurrentPageId]);
 
   // Handler for diagram node clicks — opens the detail panel
   const handleDiagramNodeClick = useCallback((nodeId: string, label: string, _rect: DOMRect, diagramData?: import('@/types/diagramData').DiagramData) => {
@@ -332,6 +343,39 @@ export default function RepoWikiPage() {
   }, []);
 
   const [isModelSelectionModalOpen, setIsModelSelectionModalOpen] = useState(false);
+
+  // Onboarding tooltip state
+  const [onboardingStep, setOnboardingStep] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (!wikiStructure || isLoading) return;
+    try {
+      if (typeof window !== 'undefined' && !localStorage.getItem('bcw-onboarded')) {
+        const timer = setTimeout(() => setOnboardingStep(0), 800);
+        return () => clearTimeout(timer);
+      }
+    } catch {
+      // localStorage not available
+    }
+  }, [wikiStructure, isLoading]);
+
+  useEffect(() => {
+    if (onboardingStep === null) return;
+    const timer = setTimeout(() => {
+      if (onboardingStep < 2) {
+        setOnboardingStep(onboardingStep + 1);
+      } else {
+        setOnboardingStep(null);
+        try { localStorage.setItem('bcw-onboarded', '1'); } catch { /* noop */ }
+      }
+    }, 5000);
+    return () => clearTimeout(timer);
+  }, [onboardingStep]);
+
+  const dismissOnboarding = useCallback(() => {
+    setOnboardingStep(null);
+    try { localStorage.setItem('bcw-onboarded', '1'); } catch { /* noop */ }
+  }, []);
 
   return (
     <div className="flex-1 bg-background flex flex-col font-sans">
@@ -371,7 +415,7 @@ export default function RepoWikiPage() {
                     <Search size={12} className="h-3 w-3" />
                     <span className="hidden sm:inline">Search</span>
                     <kbd className="hidden sm:inline-flex items-center gap-0.5 rounded border border-border bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground ml-1">
-                      <span>&#8984;</span>K
+                      {typeof navigator !== 'undefined' && /Mac|iPod|iPhone|iPad/.test(navigator.platform) ? '\u2318' : 'Ctrl+'}K
                     </kbd>
                   </button>
                   {/* Graph button */}
@@ -578,6 +622,25 @@ export default function RepoWikiPage() {
                 </motion.div>
               )}
 
+              {/* Sidebar search trigger */}
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                transition={{ duration: 0.3, delay: 0.15, ease: "easeOut" }}
+                className="px-4 pb-2"
+              >
+                <button
+                  onClick={() => setIsSearchOpen(true)}
+                  className="flex items-center gap-2 w-full rounded-md border border-border bg-muted/40 px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                >
+                  <Search size={14} className="h-3.5 w-3.5 shrink-0" />
+                  <span className="flex-1 text-left truncate">Search pages...</span>
+                  <kbd className="hidden sm:inline-flex items-center gap-0.5 rounded border border-border bg-background px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground shrink-0">
+                    {typeof navigator !== 'undefined' && /Mac|iPod|iPhone|iPad/.test(navigator.platform) ? '\u2318' : 'Ctrl+'}K
+                  </kbd>
+                </button>
+              </motion.div>
+
               <motion.div
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
@@ -712,7 +775,7 @@ export default function RepoWikiPage() {
                     )}
                   </motion.article>
 
-                  {/* Floating Table of Contents */}
+                  {/* Table of Contents -- full sidebar on XL screens */}
                   <aside className="hidden xl:block w-56 shrink-0">
                     <div className="sticky top-0 pt-2 max-h-[calc(100vh-12rem)] overflow-y-auto">
                       <TableOfContents
@@ -721,6 +784,46 @@ export default function RepoWikiPage() {
                       />
                     </div>
                   </aside>
+
+                  {/* Floating TOC button for non-XL screens */}
+                  <div className="xl:hidden fixed bottom-24 right-8 z-40">
+                    <button
+                      onClick={() => setIsFloatingTocOpen(prev => !prev)}
+                      className={`h-10 w-10 rounded-full shadow-lg flex items-center justify-center transition-all hover:scale-105 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 ${
+                        isFloatingTocOpen
+                          ? 'bg-primary/90 text-primary-foreground ring-2 ring-primary ring-offset-2 ring-offset-background'
+                          : 'bg-card text-foreground border border-border hover:bg-accent'
+                      }`}
+                      aria-label={isFloatingTocOpen ? 'Close table of contents' : 'Table of contents'}
+                      title="Table of contents"
+                    >
+                      {isFloatingTocOpen ? <X size={16} /> : <List size={16} />}
+                    </button>
+
+                    {/* TOC popover */}
+                    {isFloatingTocOpen && (
+                      <motion.div
+                        initial={{ opacity: 0, y: 8, scale: 0.95 }}
+                        animate={{ opacity: 1, y: 0, scale: 1 }}
+                        exit={{ opacity: 0, y: 8, scale: 0.95 }}
+                        transition={{ duration: 0.15 }}
+                        className="absolute bottom-12 right-0 w-64 max-h-80 overflow-y-auto rounded-xl border border-border bg-card shadow-lg p-4"
+                      >
+                        <TableOfContents
+                          content={generatedPages[currentPageId].content}
+                          scrollContainer={wikiContentRef.current}
+                        />
+                      </motion.div>
+                    )}
+                  </div>
+                </div>
+              ) : currentPageId && pagesInProgress.has(currentPageId) ? (
+                <div className="flex flex-col items-center justify-center h-full text-muted-foreground">
+                  <RefreshCw size={24} className="h-6 w-6 text-primary animate-spin mb-4" />
+                  <p className="text-lg font-medium text-foreground">Generating content...</p>
+                  <p className="text-sm">
+                    {wikiStructure?.pages.find(p => p.id === currentPageId)?.title || 'This page'} is being generated
+                  </p>
                 </div>
               ) : (
                 <div className="flex flex-col items-center justify-center h-full text-muted-foreground">
@@ -879,6 +982,48 @@ export default function RepoWikiPage() {
         isOpen={showGraph}
         onClose={() => setShowGraph(false)}
       />
+
+      {/* Onboarding tooltips */}
+      {onboardingStep !== null && (
+        <div className="fixed inset-0 z-[60] pointer-events-none">
+          {onboardingStep === 0 && (
+            <motion.div
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="pointer-events-auto absolute top-32 left-4 lg:left-[calc(1rem)] max-w-[220px] bg-primary text-primary-foreground rounded-lg px-4 py-3 shadow-lg text-sm"
+            >
+              <p className="font-medium mb-1">Browse wiki pages</p>
+              <p className="text-xs opacity-90">Navigate sections and pages in the sidebar</p>
+              <button onClick={dismissOnboarding} className="mt-2 text-xs underline opacity-75 hover:opacity-100">Dismiss</button>
+              <div className="absolute -left-1.5 top-4 w-3 h-3 bg-primary rotate-45" />
+            </motion.div>
+          )}
+          {onboardingStep === 1 && (
+            <motion.div
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="pointer-events-auto absolute top-2 right-1/2 translate-x-1/2 max-w-[220px] bg-primary text-primary-foreground rounded-lg px-4 py-3 shadow-lg text-sm"
+            >
+              <p className="font-medium mb-1">Search pages</p>
+              <p className="text-xs opacity-90">Press {typeof navigator !== 'undefined' && /Mac|iPod|iPhone|iPad/.test(navigator.platform) ? '\u2318' : 'Ctrl+'}K to quickly find any page</p>
+              <button onClick={dismissOnboarding} className="mt-2 text-xs underline opacity-75 hover:opacity-100">Dismiss</button>
+              <div className="absolute left-1/2 -translate-x-1/2 -bottom-1.5 w-3 h-3 bg-primary rotate-45" />
+            </motion.div>
+          )}
+          {onboardingStep === 2 && (
+            <motion.div
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="pointer-events-auto absolute bottom-24 right-16 max-w-[220px] bg-primary text-primary-foreground rounded-lg px-4 py-3 shadow-lg text-sm"
+            >
+              <p className="font-medium mb-1">Ask AI anything</p>
+              <p className="text-xs opacity-90">Click the chat button to ask questions about this codebase</p>
+              <button onClick={dismissOnboarding} className="mt-2 text-xs underline opacity-75 hover:opacity-100">Dismiss</button>
+              <div className="absolute -right-1.5 bottom-4 w-3 h-3 bg-primary rotate-45" />
+            </motion.div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

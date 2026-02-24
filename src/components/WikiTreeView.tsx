@@ -169,7 +169,7 @@ const WikiTreeView: React.FC<WikiTreeViewProps> = ({
             <span className="w-1.5 h-1.5 rounded-full flex-shrink-0 bg-muted-foreground/40" />
           )}
           {/* Low importance: no dot at all */}
-          <span className="truncate">{page.title}</span>
+          <span className="truncate" title={page.title}>{page.title}</span>
         </div>
       </button>
     );
@@ -216,7 +216,7 @@ const WikiTreeView: React.FC<WikiTreeViewProps> = ({
               <ChevronRight size={10} />
             )}
           </span>
-          <span className="truncate flex-1">{section.title}</span>
+          <span className="truncate flex-1" title={section.title}>{section.title}</span>
           {/* Page count badge */}
           <span className="ml-2 flex-shrink-0 text-[11px] font-medium text-muted-foreground/70 bg-muted/60 px-1.5 py-0.5 rounded-full leading-none">
             {pageCount}

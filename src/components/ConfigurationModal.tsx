@@ -104,11 +104,7 @@ const TEMPLATE_ICONS: Record<string, React.ReactNode> = {
   ),
 };
 
-const STEPS = [
-  { number: 1, label: 'Wiki Settings' },
-  { number: 2, label: 'Model & Filters' },
-  { number: 3, label: 'Access & Auth' },
-] as const;
+type TabId = 'basic' | 'advanced';
 
 export default function ConfigurationModal({
   isOpen,
@@ -150,7 +146,7 @@ export default function ConfigurationModal({
 }: ConfigurationModalProps) {
   const { messages: t } = useLanguage();
 
-  const [currentStep, setCurrentStep] = useState(1);
+  const [activeTab, setActiveTab] = useState<TabId>('basic');
   const [showTokenSection, setShowTokenSection] = useState(false);
   const [templates, setTemplates] = useState<Record<string, WikiTemplate>>({});
 
@@ -175,10 +171,10 @@ export default function ConfigurationModal({
     return () => { cancelled = true; };
   }, [isOpen]);
 
-  // Reset to step 1 when modal opens
+  // Reset to basic tab when modal opens
   useEffect(() => {
     if (isOpen) {
-      setCurrentStep(1);
+      setActiveTab('basic');
     }
   }, [isOpen]);
 
@@ -189,9 +185,6 @@ export default function ConfigurationModal({
   }, [selectedTemplate, setIsComprehensiveView]);
 
   if (!isOpen) return null;
-
-  const goNext = () => setCurrentStep((s) => Math.min(s + 1, 3) as 1 | 2 | 3);
-  const goBack = () => setCurrentStep((s) => Math.max(s - 1, 1) as 1 | 2 | 3);
 
   const templateList = Object.values(templates);
 
@@ -205,90 +198,65 @@ export default function ConfigurationModal({
 
       {/* Modal Content */}
       <div className="relative z-50 w-full max-w-2xl max-h-[90vh] overflow-hidden rounded-xl border border-border bg-card elevation-4 animate-in fade-in zoom-in-95 duration-200 sm:mx-4">
-        {/* Modal header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-border bg-muted/40">
-          <h3 className="text-lg font-semibold leading-none tracking-tight text-foreground">
-            {t.form?.configureWiki || 'Configure Wiki'}
-          </h3>
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none data-[state=open]:bg-accent data-[state=open]:text-muted-foreground"
-          >
-            <svg className="h-4 w-4 text-muted-foreground" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-            </svg>
-            <span className="sr-only">Close</span>
-          </button>
+        {/* Modal header with tabs */}
+        <div className="border-b border-border bg-muted/40">
+          <div className="flex items-center justify-between px-6 py-4">
+            <h3 className="text-lg font-semibold leading-none tracking-tight text-foreground">
+              {t.form?.configureWiki || 'Configure Wiki'}
+            </h3>
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
+            >
+              <svg className="h-4 w-4 text-muted-foreground" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+              <span className="sr-only">Close</span>
+            </button>
+          </div>
+
+          {/* Tab bar */}
+          <div className="flex px-6 -mb-px">
+            {([
+              { id: 'basic' as TabId, label: 'Basic' },
+              { id: 'advanced' as TabId, label: 'Advanced' },
+            ]).map((tab) => (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => setActiveTab(tab.id)}
+                className={`relative px-4 py-2.5 text-sm font-medium transition-colors ${
+                  activeTab === tab.id
+                    ? 'text-foreground'
+                    : 'text-muted-foreground hover:text-foreground'
+                }`}
+              >
+                {tab.label}
+                {activeTab === tab.id && (
+                  <motion.div
+                    layoutId="config-tab-indicator"
+                    className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary rounded-full"
+                    transition={{ type: 'spring', stiffness: 500, damping: 30 }}
+                  />
+                )}
+              </button>
+            ))}
+          </div>
         </div>
 
         {/* Modal body */}
-        <div className="p-6 overflow-y-auto max-h-[calc(90vh-8rem)]">
-          {/* Step Indicators */}
-          <div className="mb-8">
-            <div className="flex items-center justify-between">
-              {STEPS.map((step, idx) => (
-                <React.Fragment key={step.number}>
-                  {/* Step circle + label */}
-                  <div className="flex flex-col items-center gap-1.5 relative z-10">
-                    <div
-                      className={`flex items-center justify-center w-8 h-8 rounded-full text-sm font-semibold transition-all duration-300 ${
-                        currentStep > step.number
-                          ? 'bg-success text-success-foreground'
-                          : currentStep === step.number
-                            ? 'bg-primary text-primary-foreground'
-                            : 'bg-muted text-muted-foreground border border-border'
-                      }`}
-                    >
-                      {currentStep > step.number ? (
-                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                        </svg>
-                      ) : (
-                        step.number
-                      )}
-                    </div>
-                    <span
-                      className={`text-xs whitespace-nowrap transition-colors duration-300 ${
-                        currentStep === step.number
-                          ? 'font-bold text-foreground'
-                          : currentStep > step.number
-                            ? 'font-medium text-success'
-                            : 'font-medium text-muted-foreground'
-                      }`}
-                    >
-                      {step.label}
-                    </span>
-                  </div>
-
-                  {/* Connector line between steps */}
-                  {idx < STEPS.length - 1 && (
-                    <div className="flex-1 mx-3 mb-5">
-                      <div className="h-0.5 w-full rounded-full bg-border relative overflow-hidden">
-                        <div
-                          className="absolute inset-y-0 left-0 bg-success rounded-full transition-all duration-500 ease-out"
-                          style={{ width: currentStep > step.number ? '100%' : '0%' }}
-                        />
-                      </div>
-                    </div>
-                  )}
-                </React.Fragment>
-              ))}
-            </div>
-          </div>
-
-          {/* Step Content with fixed min-height */}
-          <div className="min-h-[320px] relative">
-            <AnimatePresence mode="wait">
-              {/* Step 1: Wiki Settings */}
-              {currentStep === 1 && (
-                <motion.div
-                  key="step-1"
-                  initial={{ opacity: 0, x: 20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  exit={{ opacity: 0, x: -20 }}
-                  transition={{ duration: 0.25, ease: "easeOut" }}
-                >
+        <div className="p-6 overflow-y-auto max-h-[calc(90vh-10rem)]">
+          <AnimatePresence mode="wait">
+            {/* Basic Tab */}
+            {activeTab === 'basic' && (
+              <motion.div
+                key="tab-basic"
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -8 }}
+                transition={{ duration: 0.2, ease: "easeOut" }}
+              >
                   {/* Repository info */}
                   <div className="mb-6">
                     <label className="block text-sm font-medium leading-none mb-2 text-foreground">
@@ -407,16 +375,18 @@ export default function ConfigurationModal({
                 </motion.div>
               )}
 
-              {/* Step 2: Model & Filters */}
-              {currentStep === 2 && (
+              {/* Advanced Tab */}
+              {activeTab === 'advanced' && (
                 <motion.div
-                  key="step-2"
-                  initial={{ opacity: 0, x: 20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  exit={{ opacity: 0, x: -20 }}
-                  transition={{ duration: 0.25, ease: "easeOut" }}
+                  key="tab-advanced"
+                  initial={{ opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -8 }}
+                  transition={{ duration: 0.2, ease: "easeOut" }}
                 >
+                  {/* Model & Filters */}
                   <div className="mb-6">
+                    <h4 className="text-sm font-medium text-foreground mb-3">Model & File Filters</h4>
                     <UserSelector
                       provider={provider}
                       setProvider={setProvider}
@@ -437,20 +407,13 @@ export default function ConfigurationModal({
                       setIncludedFiles={setIncludedFiles}
                     />
                   </div>
-                </motion.div>
-              )}
 
-              {/* Step 3: Access & Auth */}
-              {currentStep === 3 && (
-                <motion.div
-                  key="step-3"
-                  initial={{ opacity: 0, x: 20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  exit={{ opacity: 0, x: -20 }}
-                  transition={{ duration: 0.25, ease: "easeOut" }}
-                >
-                  {/* Access token section */}
+                  {/* Divider */}
+                  <div className="border-t border-border my-6" />
+
+                  {/* Access & Auth */}
                   <div className="mb-6">
+                    <h4 className="text-sm font-medium text-foreground mb-3">Access & Authentication</h4>
                     <TokenInput
                       selectedPlatform={selectedPlatform}
                       setSelectedPlatform={setSelectedPlatform}
@@ -478,7 +441,7 @@ export default function ConfigurationModal({
                         id="authCode"
                         value={authCode || ''}
                         onChange={(e) => setAuthCode?.(e.target.value)}
-                        className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                        className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                         placeholder="Enter your authorization code"
                       />
                       <div className="flex items-center mt-2 text-xs text-muted-foreground">
@@ -494,59 +457,26 @@ export default function ConfigurationModal({
                 </motion.div>
               )}
             </AnimatePresence>
-          </div>
         </div>
 
         {/* Modal footer */}
         <div className="flex items-center justify-between px-6 py-4 border-t border-border bg-muted/40">
-          {/* Left side button */}
-          <div>
-            {currentStep === 1 ? (
-              <button
-                type="button"
-                onClick={onClose}
-                className="inline-flex items-center justify-center rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 border border-input bg-background hover:bg-accent hover:text-accent-foreground h-10 px-4 py-2"
-              >
-                {t.common?.cancel || 'Cancel'}
-              </button>
-            ) : (
-              <button
-                type="button"
-                onClick={goBack}
-                className="inline-flex items-center justify-center gap-1.5 rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 border border-input bg-background hover:bg-accent hover:text-accent-foreground h-10 px-4 py-2"
-              >
-                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
-                </svg>
-                Back
-              </button>
-            )}
-          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="inline-flex items-center justify-center rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 border border-input bg-background hover:bg-accent hover:text-accent-foreground h-10 px-4 py-2"
+          >
+            {t.common?.cancel || 'Cancel'}
+          </button>
 
-          {/* Right side button */}
-          <div>
-            {currentStep < 3 ? (
-              <button
-                type="button"
-                onClick={goNext}
-                className="inline-flex items-center justify-center gap-1.5 rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 bg-primary text-primary-foreground hover:bg-primary/90 h-10 px-4 py-2"
-              >
-                Next
-                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
-                </svg>
-              </button>
-            ) : (
-              <button
-                type="button"
-                onClick={onSubmit}
-                disabled={isSubmitting}
-                className="inline-flex items-center justify-center rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 bg-primary text-primary-foreground hover:bg-primary/90 h-10 px-4 py-2"
-              >
-                {isSubmitting ? (t.common?.processing || 'Processing...') : (t.common?.generateWiki || 'Generate Wiki')}
-              </button>
-            )}
-          </div>
+          <button
+            type="button"
+            onClick={onSubmit}
+            disabled={isSubmitting}
+            className="inline-flex items-center justify-center rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 bg-primary text-primary-foreground hover:bg-primary/90 h-10 px-4 py-2"
+          >
+            {isSubmitting ? (t.common?.processing || 'Processing...') : (t.common?.generateWiki || 'Generate Wiki')}
+          </button>
         </div>
       </div>
     </div>
