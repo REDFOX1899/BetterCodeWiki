@@ -311,6 +311,10 @@ For full setup details, see [MCP_SETUP.md](MCP_SETUP.md).
 - **"Cannot connect to API server"**: Ensure the API server is running on port 8001
 - **"Error generating wiki"**: Try a smaller repository first
 
+## Production Deployment
+
+See [DEPLOYMENT.md](DEPLOYMENT.md) for the full production deployment guide using GCP Cloud Run, Cloudflare DNS, Clerk auth, Supabase, and more.
+
 ## Credits
 
 This project is based on [DeepWiki-Open](https://github.com/AsyncFuncAI/deepwiki-open) by [AsyncFuncAI](https://github.com/AsyncFuncAI). The original project is licensed under the MIT License.
