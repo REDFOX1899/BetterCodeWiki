@@ -1,5 +1,7 @@
-import React, { useEffect, useRef, useState, useCallback } from 'react';
+import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { injectTechLogos } from '@/lib/mermaidLogoInjector';
+import { simplifyMermaid, buildSubDiagram } from '@/utils/mermaidSimplifier';
+import type { DiagramData } from '@/types/diagramData';
 // We'll use dynamic import for svg-pan-zoom and mermaid (lazy-loaded)
 
 // ============================================================
@@ -149,6 +151,38 @@ const DARK_THEME = {
 
 // Global counter to ensure unique mermaid render IDs across all instances
 let mermaidIdCounter = 0;
+
+// ============================================================
+// Module-level cache for postProcessSvg results
+// Key: theme prefix + raw SVG string
+// ============================================================
+const svgPostProcessCache = new Map<string, string>();
+const SVG_CACHE_MAX_SIZE = 200;
+
+// ============================================================
+// Detect diagram type from mermaid source for placeholder labels
+// ============================================================
+function detectDiagramType(source: string): string {
+  const first = source.trimStart().split('\n')[0].toLowerCase();
+  if (first.startsWith('graph') || first.startsWith('flowchart')) return 'Flowchart';
+  if (first.startsWith('sequencediagram') || first.startsWith('sequence')) return 'Sequence Diagram';
+  if (first.startsWith('classdiagram') || first.startsWith('class')) return 'Class Diagram';
+  if (first.startsWith('statediagram') || first.startsWith('state')) return 'State Diagram';
+  if (first.startsWith('erdiagram') || first.startsWith('er')) return 'ER Diagram';
+  if (first.startsWith('gantt')) return 'Gantt Chart';
+  if (first.startsWith('pie')) return 'Pie Chart';
+  if (first.startsWith('gitgraph') || first.startsWith('git')) return 'Git Graph';
+  if (first.startsWith('journey')) return 'Journey Map';
+  if (first.startsWith('mindmap')) return 'Mind Map';
+  if (first.startsWith('timeline')) return 'Timeline';
+  if (first.startsWith('c4')) return 'C4 Diagram';
+  return 'Diagram';
+}
+
+function estimateDiagramHeight(source: string): number {
+  const lines = source.split('\n').length;
+  return Math.max(200, Math.min(lines * 28, 600));
+}
 
 function isDarkMode(): boolean {
   if (typeof document === 'undefined') return false;
@@ -651,6 +685,10 @@ function sanitizeMermaidSource(raw: string): string {
  * 3. The viewBox allows the diagram to scale properly
  */
 function postProcessSvg(svgString: string, dark: boolean): string {
+  const cacheKey = `${dark ? 'd' : 'l'}|${svgString}`;
+  const cached = svgPostProcessCache.get(cacheKey);
+  if (cached) return cached;
+
   const bgColor = dark ? '#0a0f1a' : '#ffffff';
 
   // Parse the SVG to manipulate it
@@ -658,6 +696,7 @@ function postProcessSvg(svgString: string, dark: boolean): string {
   const doc = parser.parseFromString(svgString, 'image/svg+xml');
   const svgEl = doc.querySelector('svg');
 
+  let result = svgString;
   if (svgEl) {
     // Set explicit background via style attribute on the SVG element
     const existingStyle = svgEl.getAttribute('style') || '';
@@ -681,10 +720,16 @@ function postProcessSvg(svgString: string, dark: boolean): string {
 
     // Serialize back
     const serializer = new XMLSerializer();
-    return serializer.serializeToString(svgEl);
+    result = serializer.serializeToString(svgEl);
   }
 
-  return svgString;
+  // Evict oldest entries if cache is too large
+  if (svgPostProcessCache.size >= SVG_CACHE_MAX_SIZE) {
+    const firstKey = svgPostProcessCache.keys().next().value;
+    if (firstKey !== undefined) svgPostProcessCache.delete(firstKey);
+  }
+  svgPostProcessCache.set(cacheKey, result);
+  return result;
 }
 
 interface MermaidProps {
@@ -943,17 +988,106 @@ const FullScreenModal: React.FC<{
   );
 };
 
+// ============================================================
+// Layered diagram: Simple / Detailed view modes
+// ============================================================
+type DiagramViewMode = 'simple' | 'detailed';
+const CLICK_HINT_DISMISSED_KEY = 'bcw-diagram-click-hint-dismissed';
+const LEGEND_COLLAPSED_KEY = 'bcw-diagram-legend-collapsed';
+let firstMermaidInstanceRendered = false;
+
+/** Collapsible legend showing node color meanings. */
+const DiagramLegend: React.FC<{ defaultCollapsed?: boolean }> = ({ defaultCollapsed = true }) => {
+  const [collapsed, setCollapsed] = useState(() => {
+    if (typeof localStorage === 'undefined') return defaultCollapsed;
+    return localStorage.getItem(LEGEND_COLLAPSED_KEY) === 'true' || defaultCollapsed;
+  });
+  const toggle = () => {
+    setCollapsed(c => {
+      const next = !c;
+      try { localStorage.setItem(LEGEND_COLLAPSED_KEY, String(next)); } catch { /* ignore */ }
+      return next;
+    });
+  };
+  const items = [
+    { color: 'bg-blue-200 dark:bg-blue-900 border-blue-500', label: 'Primary / Core' },
+    { color: 'bg-green-100 dark:bg-green-900 border-green-500', label: 'Secondary / Supporting' },
+    { color: 'bg-amber-100 dark:bg-amber-900 border-amber-500', label: 'Tertiary / Utility' },
+    { color: 'bg-fuchsia-100 dark:bg-fuchsia-900 border-fuchsia-500', label: 'External / Integration' },
+  ];
+  return (
+    <div className="mt-2 mb-1">
+      <button onClick={toggle} className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors">
+        <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={`transition-transform duration-200 ${collapsed ? '' : 'rotate-90'}`}>
+          <polyline points="9 18 15 12 9 6"></polyline>
+        </svg>
+        Legend
+      </button>
+      {!collapsed && (
+        <div className="mt-2 flex flex-wrap gap-3 pl-4">
+          {items.map(item => (
+            <div key={item.label} className="flex items-center gap-1.5">
+              <span className={`inline-block w-3 h-3 rounded-sm border ${item.color}`} />
+              <span className="text-xs text-muted-foreground">{item.label}</span>
+            </div>
+          ))}
+          <div className="flex items-center gap-1.5">
+            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-muted-foreground">
+              <circle cx="12" cy="12" r="10" /><path d="M12 16v-4M12 8h.01" />
+            </svg>
+            <span className="text-xs text-muted-foreground">Click any node for details</span>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
 const Mermaid: React.FC<MermaidProps> = ({ chart, className = '', zoomingEnabled = false, diagramData, onNodeClick, explorerUrl }) => {
   const [svg, setSvg] = useState<string>('');
   const [error, setError] = useState<string | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [themeKey, setThemeKey] = useState(0); // forces re-render on theme change
   const [isInView, setIsInView] = useState(false); // viewport-based lazy rendering
+  const [viewMode, setViewMode] = useState<DiagramViewMode>('simple');
+  const [subDiagramSource, setSubDiagramSource] = useState<string | null>(null);
+  const [showClickHint, setShowClickHint] = useState(false);
+  const [isFirstInstance] = useState(() => {
+    if (!firstMermaidInstanceRendered) { firstMermaidInstanceRendered = true; return true; }
+    return false;
+  });
   const containerRef = useRef<HTMLDivElement>(null);
   const outerRef = useRef<HTMLDivElement>(null); // for IntersectionObserver
   const idRef = useRef(`mermaid-${++mermaidIdCounter}-${Math.random().toString(36).substring(2, 9)}`);
   const mouseDownPosRef = useRef<{ x: number; y: number } | null>(null);
   const selectedNodeRef = useRef<string | null>(null);
+  // Per-theme SVG cache: avoids full mermaid re-render when toggling back to a seen theme
+  const themeSvgCacheRef = useRef<Map<string, string>>(new Map());
+
+  // Detect diagram type and height for progressive loading placeholder
+  const diagramType = useMemo(() => detectDiagramType(chart), [chart]);
+  const placeholderHeight = useMemo(() => estimateDiagramHeight(chart), [chart]);
+
+  // Compute the effective chart source based on view mode
+  const effectiveChart = useMemo(() => {
+    if (subDiagramSource) return subDiagramSource;
+    if (viewMode === 'simple') return simplifyMermaid(chart, diagramData as DiagramData | undefined);
+    return chart;
+  }, [chart, diagramData, viewMode, subDiagramSource]);
+
+  // Show click-to-explain hint on first diagram, once per user
+  useEffect(() => {
+    if (!isFirstInstance || !svg || !onNodeClick) return;
+    try { if (localStorage.getItem(CLICK_HINT_DISMISSED_KEY) === 'true') return; } catch { /* ignore */ }
+    setShowClickHint(true);
+    const timer = setTimeout(() => setShowClickHint(false), 6000);
+    return () => clearTimeout(timer);
+  }, [isFirstInstance, svg, onNodeClick]);
+
+  const dismissClickHint = useCallback(() => {
+    setShowClickHint(false);
+    try { localStorage.setItem(CLICK_HINT_DISMISSED_KEY, 'true'); } catch { /* ignore */ }
+  }, []);
 
   // Viewport-based lazy rendering — only render when diagram scrolls into view
   useEffect(() => {
@@ -965,7 +1099,7 @@ const Mermaid: React.FC<MermaidProps> = ({ chart, className = '', zoomingEnabled
           observer.disconnect();
         }
       },
-      { rootMargin: '200px' } // start loading 200px before visible
+      { rootMargin: '50px' } // start loading 50px before visible (reduced for perf)
     );
     observer.observe(outerRef.current);
     return () => observer.disconnect();
@@ -975,10 +1109,18 @@ const Mermaid: React.FC<MermaidProps> = ({ chart, className = '', zoomingEnabled
   useEffect(() => {
     const unsubscribe = subscribeToThemeChanges(() => {
       const dark = isDarkMode();
-      // Force re-initialization on theme change by resetting tracker
+      const themeLabel = dark ? 'dark' : 'light';
+
+      // Check if we already have a cached SVG for this theme — skip full re-render
+      const cached = themeSvgCacheRef.current.get(themeLabel);
+      if (cached) {
+        setSvg(cached);
+        return;
+      }
+
+      // No cache hit — must re-render with new theme
       lastInitializedTheme = null;
       void ensureMermaidInitialized(dark);
-      // Generate a new unique ID for re-render (mermaid caches by ID)
       idRef.current = `mermaid-${++mermaidIdCounter}-${Math.random().toString(36).substring(2, 9)}`;
       setThemeKey(k => k + 1);
     });
@@ -1055,11 +1197,14 @@ const Mermaid: React.FC<MermaidProps> = ({ chart, className = '', zoomingEnabled
     };
   }, [svg, zoomingEnabled, isFullscreen]);
 
-  const renderChart = useCallback(async (isMountedRef: { current: boolean }) => {
-    if (!chart || !isMountedRef.current) return;
+  // Memoize sanitized effective chart
+  const sanitizedEffectiveChart = useMemo(() => sanitizeMermaidSource(effectiveChart), [effectiveChart]);
 
-    const sanitized = sanitizeMermaidSource(chart);
-    if (!sanitized) return;
+  const renderChart = useCallback(async (isMountedRef: { current: boolean }) => {
+    if (!sanitizedEffectiveChart || !isMountedRef.current) return;
+
+    // Fresh render ID to avoid mermaid cache collisions when switching modes
+    idRef.current = `mermaid-${++mermaidIdCounter}-${Math.random().toString(36).substring(2, 9)}`;
 
     // Ensure mermaid is initialized with current theme before render
     const dark = isDarkMode();
@@ -1070,21 +1215,31 @@ const Mermaid: React.FC<MermaidProps> = ({ chart, className = '', zoomingEnabled
       setSvg('');
 
       const mermaid = await getMermaid();
-      const { svg: renderedSvg } = await mermaid.render(idRef.current, sanitized);
+      const { svg: renderedSvg } = await mermaid.render(idRef.current, sanitizedEffectiveChart);
 
       if (!isMountedRef.current) return;
 
       // Post-process the SVG to ensure proper background and sizing
       const processed = postProcessSvg(renderedSvg, dark);
+
+      // Cache the processed SVG for this theme so theme toggles are instant
+      const themeLabel = dark ? 'dark' : 'light';
+      themeSvgCacheRef.current.set(themeLabel, processed);
+
       setSvg(processed);
     } catch (err) {
       console.error('Mermaid rendering error:', err);
 
       if (isMountedRef.current) {
-        setError(sanitized);
+        setError(sanitizedEffectiveChart);
       }
     }
-  }, [chart]);
+  }, [sanitizedEffectiveChart]);
+
+  // Clear per-theme SVG cache when the source chart changes
+  useEffect(() => {
+    themeSvgCacheRef.current.clear();
+  }, [sanitizedEffectiveChart]);
 
   // Only render when the diagram is in the viewport (lazy rendering)
   useEffect(() => {
@@ -1092,7 +1247,7 @@ const Mermaid: React.FC<MermaidProps> = ({ chart, className = '', zoomingEnabled
     const isMountedRef = { current: true };
     renderChart(isMountedRef);
     return () => { isMountedRef.current = false; };
-  }, [chart, themeKey, renderChart, isInView]);
+  }, [effectiveChart, themeKey, renderChart, isInView]);
 
   const handleDiagramClick = () => {
     if (!error && svg) {
@@ -1105,9 +1260,52 @@ const Mermaid: React.FC<MermaidProps> = ({ chart, className = '', zoomingEnabled
     idRef.current = `mermaid-${++mermaidIdCounter}-${Math.random().toString(36).substring(2, 9)}`;
     // Force re-initialization in case theme state drifted
     lastInitializedTheme = null;
+    // Clear per-theme cache so we get a fresh render
+    themeSvgCacheRef.current.clear();
     setError(null);
     setSvg('');
     setThemeKey(k => k + 1);
+  }, []);
+
+  const handleNodeMouseUp = useCallback((e: React.MouseEvent) => {
+    if (!mouseDownPosRef.current) return;
+    const dx = e.clientX - mouseDownPosRef.current.x;
+    const dy = e.clientY - mouseDownPosRef.current.y;
+    if (Math.sqrt(dx * dx + dy * dy) > 5) return;
+    if (showClickHint) dismissClickHint();
+    const target = e.target as HTMLElement;
+    const nodeEl = target.closest('.node[data-node-id]');
+    if (nodeEl) {
+      e.stopPropagation();
+      const nodeId = nodeEl.getAttribute('data-node-id')!;
+      const label = getNodeLabel(nodeEl);
+      const rect = nodeEl.getBoundingClientRect();
+      const container = containerRef.current;
+      if (container) {
+        container.querySelectorAll('.node.node-selected').forEach(el => el.classList.remove('node-selected'));
+        nodeEl.classList.add('node-selected');
+        container.classList.add('has-selected-node');
+        selectedNodeRef.current = nodeId;
+      }
+      if (viewMode === 'simple' && diagramData && !subDiagramSource) {
+        const sub = buildSubDiagram(nodeId, diagramData as DiagramData);
+        if (sub) setSubDiagramSource(sub);
+      }
+      if (onNodeClick) onNodeClick(nodeId, label, rect);
+    } else {
+      const container = containerRef.current;
+      if (container) {
+        container.querySelectorAll('.node.node-selected').forEach(el => el.classList.remove('node-selected'));
+        container.classList.remove('has-selected-node');
+        selectedNodeRef.current = null;
+      }
+    }
+  }, [onNodeClick, viewMode, diagramData, subDiagramSource, showClickHint, dismissClickHint]);
+
+  const handleBackFromSubDiagram = useCallback(() => { setSubDiagramSource(null); }, []);
+  const toggleViewMode = useCallback(() => {
+    setSubDiagramSource(null);
+    setViewMode(m => m === 'simple' ? 'detailed' : 'simple');
   }, []);
 
   if (error) {
@@ -1141,14 +1339,37 @@ const Mermaid: React.FC<MermaidProps> = ({ chart, className = '', zoomingEnabled
 
   if (!svg) {
     return (
-      <div ref={outerRef} className={`flex justify-center items-center p-6 min-h-[200px] bg-muted/10 rounded-lg border border-border/50 ${className}`}>
-        <div className="flex items-center space-x-2">
-          <div className="w-2 h-2 bg-primary/70 rounded-full animate-pulse"></div>
-          <div className="w-2 h-2 bg-primary/70 rounded-full animate-pulse delay-75"></div>
-          <div className="w-2 h-2 bg-primary/70 rounded-full animate-pulse delay-150"></div>
-          <span className="text-muted-foreground text-xs ml-2 font-medium">
-            {isInView ? 'Rendering diagram...' : 'Waiting to render...'}
-          </span>
+      <div
+        ref={outerRef}
+        className={`relative overflow-hidden rounded-lg border border-border/50 bg-muted/10 ${className}`}
+        style={{ minHeight: `${placeholderHeight}px` }}
+      >
+        {/* Shimmer animation overlay */}
+        <div
+          className="absolute inset-0 bg-gradient-to-r from-transparent via-muted/20 to-transparent"
+          style={{
+            animation: isInView ? 'shimmer 1.5s ease-in-out infinite' : 'none',
+            backgroundSize: '200% 100%',
+          }}
+        />
+        <style>{`@keyframes shimmer { 0% { background-position: -200% 0; } 100% { background-position: 200% 0; } }`}</style>
+        <div className="flex flex-col items-center justify-center h-full py-8 gap-3">
+          <div className="flex items-center gap-2 text-muted-foreground/60">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+              <line x1="3" y1="9" x2="21" y2="9"></line>
+              <line x1="9" y1="21" x2="9" y2="9"></line>
+            </svg>
+            <span className="text-xs font-medium">{diagramType}</span>
+          </div>
+          <div className="flex items-center space-x-2">
+            <div className="w-1.5 h-1.5 bg-primary/50 rounded-full animate-pulse"></div>
+            <div className="w-1.5 h-1.5 bg-primary/50 rounded-full animate-pulse" style={{ animationDelay: '75ms' }}></div>
+            <div className="w-1.5 h-1.5 bg-primary/50 rounded-full animate-pulse" style={{ animationDelay: '150ms' }}></div>
+            <span className="text-muted-foreground/50 text-xs ml-1">
+              {isInView ? 'Rendering...' : 'Waiting to render...'}
+            </span>
+          </div>
         </div>
       </div>
     );
@@ -1158,7 +1379,6 @@ const Mermaid: React.FC<MermaidProps> = ({ chart, className = '', zoomingEnabled
     <>
       <div
         ref={(node) => {
-          // Combine outerRef and containerRef on the same element
           (outerRef as React.MutableRefObject<HTMLDivElement | null>).current = node;
           (containerRef as React.MutableRefObject<HTMLDivElement | null>).current = node;
         }}
@@ -1168,46 +1388,69 @@ const Mermaid: React.FC<MermaidProps> = ({ chart, className = '', zoomingEnabled
           className={`relative group ${zoomingEnabled ? "h-full rounded-lg border-2 border-border" : ""}`}
         >
           <div
-            className={`mermaid-diagram-container flex justify-center overflow-auto text-center my-4 rounded-lg transition-colors border border-border/40 ${className} ${zoomingEnabled ? "h-full" : "min-h-[300px] p-4 cursor-pointer hover:border-primary/30"}`}
+            className={`mermaid-diagram-container flex justify-center overflow-auto text-center my-4 rounded-lg transition-all duration-300 border border-border/40 ${className} ${zoomingEnabled ? "h-full" : "min-h-[300px] p-4 cursor-pointer hover:border-primary/30"}`}
             dangerouslySetInnerHTML={{ __html: svg }}
             onClick={zoomingEnabled ? undefined : handleDiagramClick}
             onMouseDown={(e) => { mouseDownPosRef.current = { x: e.clientX, y: e.clientY }; }}
-            onMouseUp={(e) => {
-              if (!onNodeClick || !mouseDownPosRef.current) return;
-              const dx = e.clientX - mouseDownPosRef.current.x;
-              const dy = e.clientY - mouseDownPosRef.current.y;
-              if (Math.sqrt(dx * dx + dy * dy) > 5) return;
-
-              const target = e.target as HTMLElement;
-              const nodeEl = target.closest('.node[data-node-id]');
-              if (nodeEl) {
-                e.stopPropagation(); // Prevent fullscreen open
-                const nodeId = nodeEl.getAttribute('data-node-id')!;
-                const label = getNodeLabel(nodeEl);
-                const rect = nodeEl.getBoundingClientRect();
-
-                const container = containerRef.current;
-                if (container) {
-                  container.querySelectorAll('.node.node-selected').forEach(el => el.classList.remove('node-selected'));
-                  nodeEl.classList.add('node-selected');
-                  container.classList.add('has-selected-node');
-                  selectedNodeRef.current = nodeId;
-                }
-                onNodeClick(nodeId, label, rect);
-              } else {
-                const container = containerRef.current;
-                if (container) {
-                  container.querySelectorAll('.node.node-selected').forEach(el => el.classList.remove('node-selected'));
-                  container.classList.remove('has-selected-node');
-                  selectedNodeRef.current = null;
-                }
-              }
-            }}
+            onMouseUp={handleNodeMouseUp}
             title={zoomingEnabled ? undefined : "Click to view fullscreen"}
           />
 
-          {/* Always-visible action buttons for all diagrams */}
+          {/* Click-to-explain hint (shown once per user on first diagram) */}
+          {showClickHint && onNodeClick && (
+            <div
+              className="absolute top-12 left-1/2 -translate-x-1/2 z-20 px-3 py-2 rounded-md bg-primary text-primary-foreground text-xs font-medium shadow-lg animate-pulse cursor-pointer"
+              onClick={dismissClickHint}
+            >
+              Click nodes for details
+              <div className="absolute -top-1 left-1/2 -translate-x-1/2 w-2 h-2 bg-primary rotate-45" />
+            </div>
+          )}
+
+          {/* Sub-diagram back button */}
+          {subDiagramSource && (
+            <button
+              onClick={handleBackFromSubDiagram}
+              className="absolute top-3 left-3 z-10 bg-popover/95 backdrop-blur-sm text-popover-foreground px-3 py-2 rounded-md flex items-center gap-2 text-xs font-medium shadow-lg border border-border hover:bg-accent hover:text-accent-foreground transition-all duration-200"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <line x1="19" y1="12" x2="5" y2="12"></line>
+                <polyline points="12 19 5 12 12 5"></polyline>
+              </svg>
+              <span>Back to overview</span>
+            </button>
+          )}
+
+          {/* Action buttons */}
           <div className="absolute top-3 right-3 flex items-center gap-1.5 z-10">
+            {/* Simple / Detailed toggle */}
+            <button
+              onClick={toggleViewMode}
+              className={`bg-popover/95 backdrop-blur-sm text-popover-foreground px-3 py-2 rounded-md flex items-center gap-2 text-xs font-medium shadow-lg border transition-all duration-200 cursor-pointer ${
+                viewMode === 'simple' ? 'border-primary/50 hover:bg-primary/10' : 'border-border hover:bg-accent hover:text-accent-foreground'
+              }`}
+              aria-label={viewMode === 'simple' ? 'Switch to detailed view' : 'Switch to simple view'}
+              title={viewMode === 'simple' ? 'Show detailed diagram' : 'Show simplified diagram'}
+            >
+              {viewMode === 'simple' ? (
+                <>
+                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+                  </svg>
+                  <span>Simple</span>
+                </>
+              ) : (
+                <>
+                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <rect x="3" y="3" width="7" height="7"></rect>
+                    <rect x="14" y="3" width="7" height="7"></rect>
+                    <rect x="14" y="14" width="7" height="7"></rect>
+                    <rect x="3" y="14" width="7" height="7"></rect>
+                  </svg>
+                  <span>Detailed</span>
+                </>
+              )}
+            </button>
             {explorerUrl && diagramData && (
               <a
                 href={explorerUrl}
@@ -1239,6 +1482,9 @@ const Mermaid: React.FC<MermaidProps> = ({ chart, className = '', zoomingEnabled
             </button>
           </div>
         </div>
+
+        {/* Diagram legend (first instance only, collapsed by default) */}
+        {isFirstInstance && <DiagramLegend />}
       </div>
 
       <FullScreenModal
