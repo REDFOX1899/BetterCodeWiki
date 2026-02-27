@@ -824,6 +824,7 @@ def upsert_supabase(
     try:
         from api.supabase_client import db
 
+        cache_key = f"deepwiki_cache_github_{owner}_{repo}_{language}.json"
         result = db.upsert_wiki_project(
             owner=owner,
             repo=repo,
@@ -834,9 +835,9 @@ def upsert_supabase(
             tags=tags,
             is_published=True,
             is_featured=is_featured,
-            github_stars=stars,
-            github_url=github_url,
+            star_count=stars,
             page_count=page_count,
+            gcs_cache_path=cache_key,
         )
         return result
     except RuntimeError as exc:

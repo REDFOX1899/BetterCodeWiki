@@ -37,8 +37,8 @@ services:
       - PORT=8001
       - NODE_ENV=development
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
-      - WIKI_STORAGE_BACKEND=${WIKI_STORAGE_BACKEND:-local}
-      - GCS_BUCKET_NAME=${GCS_BUCKET_NAME:-gitunderstand-wikicache}
+      - WIKI_STORAGE_TYPE=${WIKI_STORAGE_TYPE:-local}
+      - GCS_BUCKET=${GCS_BUCKET:-gitunderstand-wikicache}
     env_file:
       - ../.env
     volumes:

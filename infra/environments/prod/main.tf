@@ -85,8 +85,9 @@ module "api" {
 
   env_vars = {
     ENVIRONMENT          = "production"
-    WIKI_STORAGE_BACKEND = "gcs"
-    GCS_BUCKET_NAME      = "gitunderstand-wikicache"
+    WIKI_STORAGE_TYPE   = "gcs"
+    GCS_BUCKET             = "gitunderstand-wikicache"
+    DEEPWIKI_EMBEDDER_TYPE = "google"
   }
 
   secret_env_vars = {

@@ -1,23 +1,16 @@
 [
   {
-    "owner": "facebook",
-    "repo": "react",
+    "owner": "anthropics",
+    "repo": "claude-code",
     "platform": "github",
-    "tags": ["javascript", "ui", "frontend", "library"],
+    "tags": ["typescript", "ai", "cli", "agent", "coding"],
     "featured": true
   },
   {
-    "owner": "pallets",
-    "repo": "flask",
+    "owner": "google-gemini",
+    "repo": "gemini-cli",
     "platform": "github",
-    "tags": ["python", "web", "backend", "microframework"],
-    "featured": true
-  },
-  {
-    "owner": "expressjs",
-    "repo": "express",
-    "platform": "github",
-    "tags": ["javascript", "node", "backend", "web"],
+    "tags": ["typescript", "ai", "cli", "terminal", "agent"],
     "featured": true
   },
   {
@@ -31,14 +24,21 @@
     "owner": "vercel",
     "repo": "next.js",
     "platform": "github",
-    "tags": ["javascript", "react", "fullstack", "framework"],
+    "tags": ["typescript", "react", "fullstack", "framework"],
     "featured": true
   },
   {
-    "owner": "rust-lang",
-    "repo": "rust-analyzer",
+    "owner": "openclaw",
+    "repo": "openclaw",
     "platform": "github",
-    "tags": ["rust", "tooling", "ide", "language-server"],
+    "tags": ["typescript", "ai", "assistant", "open-source"],
+    "featured": true
+  },
+  {
+    "owner": "REDFOX1899",
+    "repo": "vigilant-sanderson",
+    "platform": "github",
+    "tags": ["go", "cli", "shell", "ai", "safety"],
     "featured": true
   }
 ]

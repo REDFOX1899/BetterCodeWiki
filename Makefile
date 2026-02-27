@@ -61,7 +61,7 @@ deploy-api: ## Deploy API to Cloud Run (uses latest GAR image)
 		--port 8001 \
 		--cpu 1 --memory 2Gi \
 		--min-instances 0 --max-instances 3 \
-		--set-env-vars "ENVIRONMENT=production,WIKI_STORAGE_BACKEND=gcs,GCS_BUCKET_NAME=gitunderstand-wikicache" \
+		--set-env-vars "ENVIRONMENT=production,WIKI_STORAGE_TYPE=gcs,GCS_BUCKET=gitunderstand-wikicache,DEEPWIKI_EMBEDDER_TYPE=google" \
 		--set-secrets "GOOGLE_API_KEY=google-api-key:latest,OPENAI_API_KEY=openai-api-key:latest,CLERK_SECRET_KEY=clerk-secret-key:latest,SUPABASE_URL=supabase-url:latest,SUPABASE_SERVICE_ROLE_KEY=supabase-service-role-key:latest"
 
 deploy-web: ## Deploy Web to Cloud Run (uses latest GAR image)
