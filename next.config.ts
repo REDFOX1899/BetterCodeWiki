@@ -68,6 +68,14 @@ const nextConfig: NextConfig = {
         source: '/api/wiki_templates',
         destination: `${TARGET_SERVER_BASE_URL}/api/wiki_templates`,
       },
+      {
+        source: '/api/waitlist',
+        destination: `${TARGET_SERVER_BASE_URL}/api/waitlist`,
+      },
+      {
+        source: '/webhooks/clerk',
+        destination: `${TARGET_SERVER_BASE_URL}/webhooks/clerk`,
+      },
     ];
   },
 };

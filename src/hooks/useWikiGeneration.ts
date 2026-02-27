@@ -32,6 +32,8 @@ interface UseWikiGenerationParams {
   modelIncludedFiles: string;
   isComprehensiveView: boolean;
   selectedTemplate: string;
+  // Clerk JWT token for authenticated WebSocket connections
+  clerkToken?: string | null;
   // State setters
   setIsLoading: (v: boolean) => void;
   setLoadingMessage: (v: string | undefined) => void;
@@ -91,6 +93,7 @@ export function useWikiGeneration(params: UseWikiGenerationParams): UseWikiGener
     modelIncludedFiles,
     isComprehensiveView,
     selectedTemplate,
+    clerkToken,
     setIsLoading,
     setLoadingMessage,
     setError,
@@ -336,7 +339,10 @@ Remember:
         try {
           const serverBaseUrl = process.env.SERVER_BASE_URL || 'http://localhost:8001';
           const wsBaseUrl = serverBaseUrl.replace(/^http/, 'ws') ? serverBaseUrl.replace(/^https/, 'wss') : serverBaseUrl.replace(/^http/, 'ws');
-          const wsUrl = `${wsBaseUrl}/ws/chat`;
+          let wsUrl = `${wsBaseUrl}/ws/chat`;
+          if (clerkToken) {
+            wsUrl += `?token=${encodeURIComponent(clerkToken)}`;
+          }
 
           const ws = new WebSocket(wsUrl);
 
@@ -435,7 +441,7 @@ Remember:
         setLoadingMessage(undefined);
       }
     });
-  }, [currentToken, effectiveRepoInfo, selectedProviderState, selectedModelState, isCustomSelectedModelState, customSelectedModelState, modelExcludedDirs, modelExcludedFiles, language, activeContentRequests, generateFileUrl, modelIncludedDirs, modelIncludedFiles, setError, setLoadingMessage]);
+  }, [currentToken, effectiveRepoInfo, selectedProviderState, selectedModelState, isCustomSelectedModelState, customSelectedModelState, modelExcludedDirs, modelExcludedFiles, language, activeContentRequests, generateFileUrl, modelIncludedDirs, modelIncludedFiles, clerkToken, setError, setLoadingMessage]);
 
   // Determine the wiki structure from repository data
   const determineWikiStructure = useCallback(async (fileTree: string, readme: string, owner: string, repo: string) => {
@@ -621,7 +627,10 @@ IMPORTANT:
       try {
         const serverBaseUrl = process.env.SERVER_BASE_URL || 'http://localhost:8001';
         const wsBaseUrl = serverBaseUrl.replace(/^http/, 'ws') ? serverBaseUrl.replace(/^https/, 'wss') : serverBaseUrl.replace(/^http/, 'ws');
-        const wsUrl = `${wsBaseUrl}/ws/chat`;
+        let wsUrl = `${wsBaseUrl}/ws/chat`;
+        if (clerkToken) {
+          wsUrl += `?token=${encodeURIComponent(clerkToken)}`;
+        }
 
         const ws = new WebSocket(wsUrl);
 
@@ -1044,7 +1053,7 @@ IMPORTANT:
     } finally {
       setStructureRequestInProgress(false);
     }
-  }, [generatePageContent, currentToken, effectiveRepoInfo, pagesInProgress.size, structureRequestInProgress, selectedProviderState, selectedModelState, isCustomSelectedModelState, customSelectedModelState, modelExcludedDirs, modelExcludedFiles, language, messages.loading, isComprehensiveView, setIsLoading, setLoadingMessage, setError, setEmbeddingError, modelIncludedDirs, modelIncludedFiles]);
+  }, [generatePageContent, currentToken, effectiveRepoInfo, pagesInProgress.size, structureRequestInProgress, selectedProviderState, selectedModelState, isCustomSelectedModelState, customSelectedModelState, modelExcludedDirs, modelExcludedFiles, language, messages.loading, isComprehensiveView, clerkToken, setIsLoading, setLoadingMessage, setError, setEmbeddingError, modelIncludedDirs, modelIncludedFiles]);
 
   // Regenerate a single page via the backend endpoint
   const regeneratePage = useCallback(async (pageId: string, owner: string, repo: string, repoType: string, repoUrl?: string) => {

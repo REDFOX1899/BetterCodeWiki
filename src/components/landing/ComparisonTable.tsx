@@ -128,7 +128,7 @@ export default function ComparisonTable() {
         <div className="ct-header text-center mb-16">
           <h2 className="text-display-sm text-foreground mb-4">Built Different</h2>
           <p className="text-body-lg text-muted-foreground max-w-xl mx-auto">
-            See how BetterCodeWiki compares to closed-source alternatives.
+            See how GitUnderstand compares to closed-source alternatives.
           </p>
         </div>
 
@@ -140,7 +140,7 @@ export default function ComparisonTable() {
               Feature
             </div>
             <div className="px-6 py-4 text-label-lg text-primary text-center">
-              BetterCodeWiki
+              GitUnderstand
             </div>
             <div className="px-6 py-4 text-label-lg text-muted-foreground text-center">
               Closed-Source Tools

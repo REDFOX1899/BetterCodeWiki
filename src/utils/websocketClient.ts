@@ -6,12 +6,13 @@
 // Get the server base URL from environment or use default
 const SERVER_BASE_URL = process.env.SERVER_BASE_URL || 'http://localhost:8001';
 
-// Convert HTTP URL to WebSocket URL
-const getWebSocketUrl = () => {
+// Convert HTTP URL to WebSocket URL, optionally appending an auth token
+const getWebSocketUrl = (token?: string) => {
   const baseUrl = SERVER_BASE_URL;
   // Replace http:// with ws:// or https:// with wss://
   const wsBaseUrl = baseUrl.replace(/^http/, 'ws');
-  return `${wsBaseUrl}/ws/chat`;
+  const url = `${wsBaseUrl}/ws/chat`;
+  return token ? `${url}?token=${encodeURIComponent(token)}` : url;
 };
 
 export interface ChatMessage {
@@ -38,16 +39,18 @@ export interface ChatCompletionRequest {
  * @param onMessage Callback for received messages
  * @param onError Callback for errors
  * @param onClose Callback for when the connection closes
+ * @param authToken Optional Clerk JWT token for authenticated WebSocket connections
  * @returns The WebSocket connection
  */
 export const createChatWebSocket = (
   request: ChatCompletionRequest,
   onMessage: (message: string) => void,
   onError: (error: Event) => void,
-  onClose: () => void
+  onClose: () => void,
+  authToken?: string
 ): WebSocket => {
-  // Create WebSocket connection
-  const ws = new WebSocket(getWebSocketUrl());
+  // Create WebSocket connection (with auth token if provided)
+  const ws = new WebSocket(getWebSocketUrl(authToken));
   
   // Set up event handlers
   ws.onopen = () => {
@@ -86,10 +89,11 @@ export const closeWebSocket = (ws: WebSocket | null): void => {
 
 // --- Diagram Explain WebSocket ---
 
-const getDiagramExplainWebSocketUrl = () => {
+const getDiagramExplainWebSocketUrl = (token?: string) => {
   const baseUrl = SERVER_BASE_URL;
   const wsBaseUrl = baseUrl.replace(/^http/, 'ws');
-  return `${wsBaseUrl}/ws/diagram/explain`;
+  const url = `${wsBaseUrl}/ws/diagram/explain`;
+  return token ? `${url}?token=${encodeURIComponent(token)}` : url;
 };
 
 export interface DiagramExplainRequest {
@@ -109,14 +113,16 @@ export interface DiagramExplainRequest {
 
 /**
  * Creates a WebSocket connection for diagram node AI explanations
+ * @param authToken Optional Clerk JWT token for authenticated WebSocket connections
  */
 export const createDiagramExplainWebSocket = (
   request: DiagramExplainRequest,
   onMessage: (message: string) => void,
   onError: (error: Event) => void,
-  onClose: () => void
+  onClose: () => void,
+  authToken?: string
 ): WebSocket => {
-  const ws = new WebSocket(getDiagramExplainWebSocketUrl());
+  const ws = new WebSocket(getDiagramExplainWebSocketUrl(authToken));
 
   ws.onopen = () => {
     ws.send(JSON.stringify(request));

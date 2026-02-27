@@ -1,18 +1,14 @@
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
-import { useRouter } from 'next/navigation';
+import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import dynamic from 'next/dynamic';
 import { motion } from 'framer-motion';
-import { BookOpen, Github, Twitter } from 'lucide-react';
+import { BookOpen } from 'lucide-react';
 import ThemeToggle from '@/components/theme-toggle';
+import AuthButtons from '@/components/AuthButtons';
+import WaitlistModal from '@/components/WaitlistModal';
 import Mermaid from '../components/Mermaid';
-import ConfigurationModal from '@/components/ConfigurationModal';
-import ProcessedProjects from '@/components/ProcessedProjects';
-import { extractUrlPath, extractUrlDomain } from '@/utils/urlDecoder';
-import { useProcessedProjects } from '@/hooks/useProcessedProjects';
-
 import { useLanguage } from '@/contexts/LanguageContext';
 
 // Landing page sections
@@ -28,9 +24,19 @@ import FloatingElements from '@/components/landing/FloatingElements';
 // Dynamically import Hero3D to avoid SSR issues with Three.js
 const Hero3D = dynamic(() => import('@/components/landing/Hero3D'), { ssr: false });
 
+// Curated library of pre-generated wikis
+const CURATED_REPOS = [
+  { owner: 'facebook', repo: 'react', description: 'A JavaScript library for building user interfaces', platform: 'github' },
+  { owner: 'vercel', repo: 'next.js', description: 'The React Framework for the Web', platform: 'github' },
+  { owner: 'microsoft', repo: 'TypeScript', description: 'TypeScript is a superset of JavaScript that compiles to clean JavaScript output', platform: 'github' },
+  { owner: 'denoland', repo: 'deno', description: 'A modern runtime for JavaScript and TypeScript', platform: 'github' },
+  { owner: 'tailwindlabs', repo: 'tailwindcss', description: 'A utility-first CSS framework for rapid UI development', platform: 'github' },
+  { owner: 'pytorch', repo: 'pytorch', description: 'Tensors and dynamic neural networks in Python', platform: 'github' },
+];
+
 // Define the demo mermaid charts outside the component
 const DEMO_FLOW_CHART = `graph TD
-  A[Code Repository] --> B[BetterCodeWiki]
+  A[Code Repository] --> B[GitUnderstand]
   B --> C[Architecture Diagrams]
   B --> D[Component Relationships]
   B --> E[Data Flow]
@@ -45,22 +51,21 @@ const DEMO_FLOW_CHART = `graph TD
 
 const DEMO_SEQUENCE_CHART = `sequenceDiagram
   participant User
-  participant BetterCodeWiki
+  participant GitUnderstand
   participant GitHub
 
-  User->>BetterCodeWiki: Enter repository URL
-  BetterCodeWiki->>GitHub: Request repository data
-  GitHub-->>BetterCodeWiki: Return repository data
-  BetterCodeWiki->>BetterCodeWiki: Process and analyze code
-  BetterCodeWiki-->>User: Display wiki with diagrams
+  User->>GitUnderstand: Browse wiki library
+  GitUnderstand->>GitHub: Request repository data
+  GitHub-->>GitUnderstand: Return repository data
+  GitUnderstand->>GitUnderstand: Process and analyze code
+  GitUnderstand-->>User: Display wiki with diagrams
 
   %% Add a note to make text more visible
-  Note over User,GitHub: BetterCodeWiki supports sequence diagrams for visualizing interactions`;
+  Note over User,GitHub: GitUnderstand supports sequence diagrams for visualizing interactions`;
 
 export default function Home() {
-  const router = useRouter();
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const { language, setLanguage, messages, supportedLanguages } = useLanguage();
-  const { projects, isLoading: projectsLoading } = useProcessedProjects();
 
   // Create a simple translation function
   const t = (key: string, params: Record<string, string | number> = {}): string => {
@@ -90,130 +95,9 @@ export default function Home() {
     return key;
   };
 
-  const [repositoryInput, setRepositoryInput] = useState('https://github.com/REDFOX1899/BetterCodeWiki');
-
-  const REPO_CONFIG_CACHE_KEY = 'bettercodewikiRepoConfigCache';
-
-  const loadConfigFromCache = (repoUrl: string) => {
-    if (!repoUrl) return;
-    try {
-      const cachedConfigs = localStorage.getItem(REPO_CONFIG_CACHE_KEY);
-      if (cachedConfigs) {
-        const configs = JSON.parse(cachedConfigs);
-        const config = configs[repoUrl.trim()];
-        if (config) {
-          setSelectedLanguage(config.selectedLanguage || language);
-          setIsComprehensiveView(config.isComprehensiveView === undefined ? true : config.isComprehensiveView);
-          setProvider(config.provider || '');
-          setModel(config.model || '');
-          setIsCustomModel(config.isCustomModel || false);
-          setCustomModel(config.customModel || '');
-          setSelectedPlatform(config.selectedPlatform || 'github');
-          setExcludedDirs(config.excludedDirs || '');
-          setExcludedFiles(config.excludedFiles || '');
-          setIncludedDirs(config.includedDirs || '');
-          setIncludedFiles(config.includedFiles || '');
-          setSelectedTemplate(config.selectedTemplate || 'comprehensive');
-        }
-      }
-    } catch (error) {
-      console.error('Error loading config from localStorage:', error);
-    }
-  };
-
-  const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const handleRepositoryInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const newRepoUrl = e.target.value;
-    setRepositoryInput(newRepoUrl);
-
-    // Clear any pending debounce timer
-    if (debounceTimerRef.current) {
-      clearTimeout(debounceTimerRef.current);
-    }
-
-    if (newRepoUrl.trim() === "") {
-      // Optionally reset fields if input is cleared
-    } else {
-      // Debounce the config lookup so it only fires after 300ms of inactivity
-      debounceTimerRef.current = setTimeout(() => {
-        loadConfigFromCache(newRepoUrl);
-      }, 300);
-    }
-  };
-
-  // Clear the debounce timer on unmount
-  useEffect(() => {
-    return () => {
-      if (debounceTimerRef.current) {
-        clearTimeout(debounceTimerRef.current);
-      }
-    };
-  }, []);
-
-  useEffect(() => {
-    if (repositoryInput) {
-      loadConfigFromCache(repositoryInput);
-    }
-  }, []);
-
-  // Provider-based model selection state
-  const [provider, setProvider] = useState<string>('');
-  const [model, setModel] = useState<string>('');
-  const [isCustomModel, setIsCustomModel] = useState<boolean>(false);
-  const [customModel, setCustomModel] = useState<string>('');
-
-  // Wiki type state - default to comprehensive view
-  const [isComprehensiveView, setIsComprehensiveView] = useState<boolean>(true);
-
-  // Wiki template state
-  const [selectedTemplate, setSelectedTemplate] = useState<string>('comprehensive');
-
-  const [excludedDirs, setExcludedDirs] = useState('');
-  const [excludedFiles, setExcludedFiles] = useState('');
-  const [includedDirs, setIncludedDirs] = useState('');
-  const [includedFiles, setIncludedFiles] = useState('');
-  const [selectedPlatform, setSelectedPlatform] = useState<'github' | 'gitlab' | 'bitbucket'>('github');
-  const [accessToken, setAccessToken] = useState('');
-  const [error, setError] = useState<string | null>(null);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [selectedLanguage, setSelectedLanguage] = useState<string>(language);
-
-  // Authentication state
-  const [authRequired, setAuthRequired] = useState<boolean>(false);
-  const [authCode, setAuthCode] = useState<string>('');
-  const [isAuthLoading, setIsAuthLoading] = useState<boolean>(true);
-
   // Scroll-aware nav state
   const [isScrolled, setIsScrolled] = useState(false);
-
-  // Sync the language context with the selectedLanguage state
-  useEffect(() => {
-    setLanguage(selectedLanguage);
-  }, [selectedLanguage, setLanguage]);
-
-  // Fetch authentication status on component mount
-  useEffect(() => {
-    const fetchAuthStatus = async () => {
-      try {
-        setIsAuthLoading(true);
-        const response = await fetch('/api/auth/status');
-        if (!response.ok) {
-          throw new Error(`HTTP error! status: ${response.status}`);
-        }
-        const data = await response.json();
-        setAuthRequired(data.auth_required);
-      } catch (err) {
-        console.error("Failed to fetch auth status:", err);
-        // Assuming auth is required if fetch fails to avoid blocking UI for safety
-        setAuthRequired(true);
-      } finally {
-        setIsAuthLoading(false);
-      }
-    };
-
-    fetchAuthStatus();
-  }, []);
+  const [isWaitlistOpen, setIsWaitlistOpen] = useState(false);
 
   // Scroll listener for nav transparency
   useEffect(() => {
@@ -224,229 +108,8 @@ export default function Home() {
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
 
-  // Parse repository URL/input and extract owner and repo
-  const parseRepositoryInput = (input: string): {
-    owner: string,
-    repo: string,
-    type: string,
-    fullPath?: string,
-    localPath?: string
-  } | null => {
-    input = input.trim();
-
-    let owner = '', repo = '', type = 'github', fullPath;
-    let localPath: string | undefined;
-
-    // Handle Windows absolute paths (e.g., C:\path\to\folder)
-    const windowsPathRegex = /^[a-zA-Z]:\\(?:[^\\/:*?"<>|\r\n]+\\)*[^\\/:*?"<>|\r\n]*$/;
-    const customGitRegex = /^(?:https?:\/\/)?([^\/]+)\/(.+?)\/([^\/]+)(?:\.git)?\/?$/;
-
-    if (windowsPathRegex.test(input)) {
-      type = 'local';
-      localPath = input;
-      repo = input.split('\\').pop() || 'local-repo';
-      owner = 'local';
-    }
-    // Handle Unix/Linux absolute paths (e.g., /path/to/folder)
-    else if (input.startsWith('/')) {
-      type = 'local';
-      localPath = input;
-      repo = input.split('/').filter(Boolean).pop() || 'local-repo';
-      owner = 'local';
-    }
-    else if (customGitRegex.test(input)) {
-      // Detect repository type based on domain
-      const domain = extractUrlDomain(input);
-      if (domain?.includes('github.com')) {
-        type = 'github';
-      } else if (domain?.includes('gitlab.com') || domain?.includes('gitlab.')) {
-        type = 'gitlab';
-      } else if (domain?.includes('bitbucket.org') || domain?.includes('bitbucket.')) {
-        type = 'bitbucket';
-      } else {
-        type = 'web'; // fallback for other git hosting services
-      }
-
-      fullPath = extractUrlPath(input)?.replace(/\.git$/, '');
-      const parts = fullPath?.split('/') ?? [];
-      if (parts.length >= 2) {
-        repo = parts[parts.length - 1] || '';
-        owner = parts[parts.length - 2] || '';
-      }
-    }
-    // Unsupported URL formats
-    else {
-      console.error('Unsupported URL format:', input);
-      return null;
-    }
-
-    if (!owner || !repo) {
-      return null;
-    }
-
-    // Clean values
-    owner = owner.trim();
-    repo = repo.trim();
-
-    // Remove .git suffix if present
-    if (repo.endsWith('.git')) {
-      repo = repo.slice(0, -4);
-    }
-
-    return { owner, repo, type, fullPath, localPath };
-  };
-
-  // State for configuration modal
-  const [isConfigModalOpen, setIsConfigModalOpen] = useState(false);
-
-  const handleFormSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-
-    // Parse repository input to validate
-    const parsedRepo = parseRepositoryInput(repositoryInput);
-
-    if (!parsedRepo) {
-      setError('Invalid repository format. Use "owner/repo", GitHub/GitLab/BitBucket URL, or a local folder path like "/path/to/folder" or "C:\\path\\to\\folder".');
-      return;
-    }
-
-    // If valid, open the configuration modal
-    setError(null);
-    setIsConfigModalOpen(true);
-  };
-
-  const validateAuthCode = async () => {
-    try {
-      if (authRequired) {
-        if (!authCode) {
-          return false;
-        }
-        const response = await fetch('/api/auth/validate', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({ 'code': authCode })
-        });
-        if (!response.ok) {
-          return false;
-        }
-        const data = await response.json();
-        return data.success || false;
-      }
-    } catch {
-      return false;
-    }
-    return true;
-  };
-
-  const handleGenerateWiki = async () => {
-
-    // Check authorization code
-    const validation = await validateAuthCode();
-    if (!validation) {
-      setError(`Failed to validate the authorization code`);
-      console.error(`Failed to validate the authorization code`);
-      setIsConfigModalOpen(false);
-      return;
-    }
-
-    // Prevent multiple submissions
-    if (isSubmitting) {
-      console.log('Form submission already in progress, ignoring duplicate click');
-      return;
-    }
-
-    try {
-      const currentRepoUrl = repositoryInput.trim();
-      if (currentRepoUrl) {
-        const existingConfigs = JSON.parse(localStorage.getItem(REPO_CONFIG_CACHE_KEY) || '{}');
-        const configToSave = {
-          selectedLanguage,
-          isComprehensiveView,
-          selectedTemplate,
-          provider,
-          model,
-          isCustomModel,
-          customModel,
-          selectedPlatform,
-          excludedDirs,
-          excludedFiles,
-          includedDirs,
-          includedFiles,
-        };
-        existingConfigs[currentRepoUrl] = configToSave;
-        localStorage.setItem(REPO_CONFIG_CACHE_KEY, JSON.stringify(existingConfigs));
-      }
-    } catch (error) {
-      console.error('Error saving config to localStorage:', error);
-    }
-
-    setIsSubmitting(true);
-
-    // Parse repository input
-    const parsedRepo = parseRepositoryInput(repositoryInput);
-
-    if (!parsedRepo) {
-      setError('Invalid repository format. Use "owner/repo", GitHub/GitLab/BitBucket URL, or a local folder path like "/path/to/folder" or "C:\\path\\to\\folder".');
-      setIsSubmitting(false);
-      return;
-    }
-
-    const { owner, repo, type, localPath } = parsedRepo;
-
-    // Store token securely in sessionStorage (not in URL)
-    const params = new URLSearchParams();
-    if (accessToken && typeof window !== 'undefined') {
-      sessionStorage.setItem('bcw_access_token', accessToken);
-    }
-    // Always include the type parameter
-    params.append('type', (type == 'local' ? type : selectedPlatform) || 'github');
-    // Add local path if it exists
-    if (localPath) {
-      params.append('local_path', encodeURIComponent(localPath));
-    } else {
-      params.append('repo_url', encodeURIComponent(repositoryInput));
-    }
-    // Add model parameters
-    params.append('provider', provider);
-    params.append('model', model);
-    if (isCustomModel && customModel) {
-      params.append('custom_model', customModel);
-    }
-    // Add file filters configuration
-    if (excludedDirs) {
-      params.append('excluded_dirs', excludedDirs);
-    }
-    if (excludedFiles) {
-      params.append('excluded_files', excludedFiles);
-    }
-    if (includedDirs) {
-      params.append('included_dirs', includedDirs);
-    }
-    if (includedFiles) {
-      params.append('included_files', includedFiles);
-    }
-
-    // Add language parameter
-    params.append('language', selectedLanguage);
-
-    // Add comprehensive parameter
-    params.append('comprehensive', isComprehensiveView.toString());
-
-    // Add template parameter
-    if (selectedTemplate && selectedTemplate !== 'comprehensive') {
-      params.append('template', selectedTemplate);
-    }
-
-    const queryString = params.toString() ? `?${params.toString()}` : '';
-
-    // Navigate using clean URL pattern: /github/owner/repo or /owner/repo for local
-    const effectiveType = (type === 'local' ? type : selectedPlatform) || 'github';
-    const basePath = effectiveType !== 'local' ? `/${effectiveType}/${owner}/${repo}` : `/${owner}/${repo}`;
-    router.push(`${basePath}${queryString}`);
-
-    // The isSubmitting state will be reset when the component unmounts during navigation
+  const handleWaitlistClick = () => {
+    setIsWaitlistOpen(true);
   };
 
   return (
@@ -469,153 +132,178 @@ export default function Home() {
               <BookOpen size={18} className="text-primary-foreground" />
             </div>
             <span className="text-title-md text-foreground" style={{ fontFamily: 'var(--font-display), var(--font-sans), sans-serif' }}>
-              {t('common.appName')}
+              GitUnderstand
             </span>
           </div>
 
-          {/* Center: Wiki Projects Link */}
+          {/* Center: Explore Library Link */}
           <div className="hidden md:flex items-center">
             <Link
               href="/wiki/projects"
               className="text-label-lg text-muted-foreground hover:text-foreground transition-colors"
             >
-              {t('nav.wikiProjects')}
+              Explore Library
             </Link>
           </div>
 
-          {/* Right: Theme Toggle + GitHub Link */}
+          {/* Right: Auth + Theme Toggle */}
           <div className="flex items-center gap-3">
+            <AuthButtons onWaitlistClick={handleWaitlistClick} />
             <ThemeToggle />
-            <a
-              href="https://github.com/REDFOX1899/BetterCodeWiki"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-muted-foreground hover:text-foreground transition-colors"
-              aria-label="GitHub Repository"
-            >
-              <Github size={18} />
-            </a>
           </div>
         </div>
       </nav>
 
       <ScrollAnimationProvider>
         {/* ===== Hero Section with 3D ===== */}
-        <Hero3D
-          value={repositoryInput}
-          onChange={handleRepositoryInputChange}
-          onSubmit={handleFormSubmit}
-          isSubmitting={isSubmitting}
-        />
+        <Hero3D>
+          {/* Headline */}
+          <motion.h1
+            className="text-display-md md:text-display-lg bg-gradient-to-r from-primary via-blue-500 to-cyan-400 bg-clip-text text-transparent mb-6"
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5, ease: 'easeOut' }}
+          >
+            Understand Any Codebase in Seconds
+          </motion.h1>
 
-        {/* Error display for form validation */}
-        {error && (
-          <div className="max-w-2xl mx-auto px-6 -mt-8 mb-8">
-            <div className="text-destructive text-body-sm font-medium text-left bg-destructive/10 border border-destructive/20 rounded-lg px-4 py-3">
-              {error}
-            </div>
-          </div>
-        )}
+          {/* Subtitle */}
+          <motion.p
+            className="text-body-lg text-muted-foreground max-w-2xl mx-auto mb-10"
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5, delay: 0.1, ease: 'easeOut' }}
+          >
+            AI-generated wikis with interactive diagrams, architecture maps, and intelligent code explanations
+          </motion.p>
 
-        {/* ===== Configuration Modal ===== */}
-        <ConfigurationModal
-          isOpen={isConfigModalOpen}
-          onClose={() => setIsConfigModalOpen(false)}
-          repositoryInput={repositoryInput}
-          selectedLanguage={selectedLanguage}
-          setSelectedLanguage={setSelectedLanguage}
-          supportedLanguages={supportedLanguages}
-          isComprehensiveView={isComprehensiveView}
-          setIsComprehensiveView={setIsComprehensiveView}
-          selectedTemplate={selectedTemplate}
-          setSelectedTemplate={setSelectedTemplate}
-          provider={provider}
-          setProvider={setProvider}
-          model={model}
-          setModel={setModel}
-          isCustomModel={isCustomModel}
-          setIsCustomModel={setIsCustomModel}
-          customModel={customModel}
-          setCustomModel={setCustomModel}
-          selectedPlatform={selectedPlatform}
-          setSelectedPlatform={setSelectedPlatform}
-          accessToken={accessToken}
-          setAccessToken={setAccessToken}
-          excludedDirs={excludedDirs}
-          setExcludedDirs={setExcludedDirs}
-          excludedFiles={excludedFiles}
-          setExcludedFiles={setExcludedFiles}
-          includedDirs={includedDirs}
-          setIncludedDirs={setIncludedDirs}
-          includedFiles={includedFiles}
-          setIncludedFiles={setIncludedFiles}
-          onSubmit={handleGenerateWiki}
-          isSubmitting={isSubmitting}
-          authRequired={authRequired}
-          authCode={authCode}
-          setAuthCode={setAuthCode}
-          isAuthLoading={isAuthLoading}
-        />
+          {/* CTA Buttons */}
+          <motion.div
+            className="flex flex-wrap items-center justify-center gap-4 mb-8"
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5, delay: 0.2, ease: 'easeOut' }}
+          >
+            <Link
+              href="/wiki/projects"
+              className="inline-flex items-center justify-center gap-2 px-8 py-3 rounded-lg bg-primary text-primary-foreground text-label-lg hover:bg-primary/90 transition-all elevation-1 hover:elevation-2"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+              </svg>
+              Explore Library
+            </Link>
+            <button
+              onClick={handleWaitlistClick}
+              className="inline-flex items-center justify-center gap-2 px-8 py-3 rounded-lg border border-border bg-card/80 backdrop-blur-sm text-foreground text-label-lg hover:border-primary/50 hover:bg-card/60 transition-all"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+              </svg>
+              Join Waitlist
+            </button>
+          </motion.div>
 
-        {/* ===== Processed Projects (if they exist) ===== */}
-        {!projectsLoading && projects.length > 0 && (
-          <section className="max-w-6xl mx-auto w-full px-6 py-12">
-            <div className="w-full space-y-8">
-              <div className="flex flex-col sm:flex-row items-center justify-between pb-6 border-b border-border">
+          {/* Social Proof Badges */}
+          <motion.div
+            className="flex flex-wrap items-center justify-center gap-3"
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5, delay: 0.3, ease: 'easeOut' }}
+          >
+            <span className="inline-flex items-center gap-2 px-4 py-2 rounded-full border border-border bg-card/80 backdrop-blur-sm text-label-md text-muted-foreground">
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+              </svg>
+              AI-Powered
+            </span>
+            <span className="inline-flex items-center gap-2 px-4 py-2 rounded-full border border-border bg-card/80 backdrop-blur-sm text-label-md text-muted-foreground">
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
+              </svg>
+              Interactive Diagrams
+            </span>
+            <span className="inline-flex items-center gap-2 px-4 py-2 rounded-full border border-border bg-card/80 backdrop-blur-sm text-label-md text-muted-foreground">
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-3.5 w-3.5 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+              </svg>
+              GitHub, GitLab & Bitbucket
+            </span>
+          </motion.div>
+        </Hero3D>
+
+        {/* ===== Curated Library Grid ===== */}
+        <section className="max-w-6xl mx-auto w-full px-6 py-12">
+          <div className="space-y-16">
+            {/* Curated Wiki Cards */}
+            <div>
+              <div className="flex items-center justify-between mb-8">
                 <div className="flex items-center gap-3">
                   <div className="bg-primary/10 p-2 rounded-full">
                     <BookOpen size={20} className="text-primary" />
                   </div>
                   <div>
-                    <h2 className="text-headline-md text-foreground">{t('projects.existingProjects')}</h2>
-                    <p className="text-muted-foreground text-body-sm">{t('projects.browseExisting')}</p>
+                    <h2 className="text-headline-md text-foreground">Popular Wikis</h2>
+                    <p className="text-muted-foreground text-body-sm">Explore AI-generated documentation for top open-source projects</p>
                   </div>
                 </div>
+                <Link
+                  href="/wiki/projects"
+                  className="hidden sm:inline-flex items-center gap-1 text-label-md text-primary hover:text-primary/80 transition-colors"
+                >
+                  View all
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                  </svg>
+                </Link>
               </div>
 
-              <ProcessedProjects
-                showHeader={false}
-                maxItems={9}
-                messages={messages}
-                className="w-full"
-              />
-            </div>
-          </section>
-        )}
-
-        {/* ===== Quick Start & Diagram Section ===== */}
-        <section className="max-w-6xl mx-auto w-full px-6 py-12">
-          <div className="space-y-16">
-            {/* Quick Start Cards */}
-            <div className="bg-card rounded-xl border border-border p-8 elevation-1">
-              <h3 className="text-title-lg text-foreground mb-6 flex items-center gap-2">
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-                </svg>
-                {t('home.quickStart')}
-              </h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                {[
-                  'https://github.com/REDFOX1899/BetterCodeWiki',
-                  'https://gitlab.com/gitlab-org/gitlab',
-                  'REDFOX1899/BetterCodeWiki',
-                  'https://bitbucket.org/atlassian/atlaskit'
-                ].map((url, index) => (
-                  <motion.button
-                    key={url}
-                    type="button"
-                    onClick={() => {
-                      setRepositoryInput(url);
-                      window.scrollTo({ top: 0, behavior: 'smooth' });
-                    }}
-                    className="px-4 py-3 bg-muted/50 rounded-lg border border-border/50 text-body-sm font-mono text-muted-foreground overflow-x-auto whitespace-nowrap hover:border-primary/50 hover:bg-primary/5 hover:text-foreground transition-all cursor-pointer text-left"
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {CURATED_REPOS.map((item, index) => (
+                  <motion.div
+                    key={`${item.owner}/${item.repo}`}
                     initial={{ opacity: 0, y: 20 }}
                     animate={{ opacity: 1, y: 0 }}
-                    transition={{ duration: 0.4, delay: index * 0.05, ease: "easeOut" }}
-                    whileHover={{ y: -4, transition: { duration: 0.2 } }}
+                    transition={{ duration: 0.4, delay: index * 0.05, ease: 'easeOut' }}
                   >
-                    {url}
-                  </motion.button>
+                    <Link
+                      href={`/${item.platform}/${item.owner}/${item.repo}`}
+                      className="group block bg-card rounded-xl border border-border p-5 hover:border-primary/50 hover:bg-card/80 transition-all elevation-1 hover:elevation-2 h-full"
+                    >
+                      <div className="flex items-start gap-3">
+                        {/* Owner avatar placeholder */}
+                        <div className="flex-shrink-0 w-10 h-10 rounded-lg bg-muted flex items-center justify-center text-muted-foreground overflow-hidden">
+                          <img
+                            src={`https://github.com/${item.owner}.png?size=40`}
+                            alt={item.owner}
+                            className="w-full h-full object-cover"
+                            onError={(e) => {
+                              // Fallback to initials if image fails to load
+                              const target = e.target as HTMLImageElement;
+                              target.style.display = 'none';
+                              if (target.parentElement) {
+                                target.parentElement.textContent = item.owner.charAt(0).toUpperCase();
+                              }
+                            }}
+                          />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className="text-label-sm text-muted-foreground truncate">{item.owner}</span>
+                            <span className="text-muted-foreground/40">/</span>
+                            <span className="text-label-lg text-foreground font-semibold truncate group-hover:text-primary transition-colors">{item.repo}</span>
+                          </div>
+                          <p className="text-body-sm text-muted-foreground line-clamp-2">{item.description}</p>
+                        </div>
+                      </div>
+                      <div className="mt-4 flex items-center gap-2 text-label-sm text-primary opacity-0 group-hover:opacity-100 transition-opacity">
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M12 6.042A8.967 8.967 0 006 3.75c-1.052 0-2.062.18-3 .512v14.25A8.987 8.987 0 016 18c2.305 0 4.408.867 6 2.292m0-14.25a8.966 8.966 0 016-2.292c1.052 0 2.062.18 3 .512v14.25A8.987 8.987 0 0018 18a8.967 8.967 0 00-6 2.292m0-14.25v14.25" />
+                        </svg>
+                        View Wiki
+                      </div>
+                    </Link>
+                  </motion.div>
                 ))}
               </div>
             </div>
@@ -665,30 +353,26 @@ export default function Home() {
         <CommunitySection stars={0} contributors={0} forks={0} />
 
         {/* ===== Footer CTA ===== */}
-        <FooterCTA
-          value={repositoryInput}
-          onChange={handleRepositoryInputChange}
-          onSubmit={handleFormSubmit}
-          isSubmitting={isSubmitting}
-        />
+        <FooterCTA onWaitlistClick={handleWaitlistClick} />
 
         {/* ===== Footer ===== */}
         <footer className="max-w-6xl mx-auto py-8 border-t border-border w-full px-6">
           <div className="flex flex-col sm:flex-row justify-between items-center gap-4 text-sm text-muted-foreground">
-            <p>{t('footer.copyright')}</p>
+            <p>&copy; {new Date().getFullYear()} GitUnderstand. All rights reserved.</p>
             <div className="flex items-center gap-6">
-              <div className="flex items-center space-x-5">
-                <a href="https://github.com/REDFOX1899/BetterCodeWiki" target="_blank" rel="noopener noreferrer" className="hover:text-foreground transition-colors">
-                  <Github size={18} />
-                </a>
-                <a href="https://github.com/REDFOX1899/BetterCodeWiki" target="_blank" rel="noopener noreferrer" className="hover:text-foreground transition-colors">
-                  <Twitter size={18} />
-                </a>
-              </div>
+              <Link
+                href="/wiki/projects"
+                className="hover:text-foreground transition-colors text-label-md"
+              >
+                Explore Library
+              </Link>
             </div>
           </div>
         </footer>
       </ScrollAnimationProvider>
+
+      {/* Waitlist Modal */}
+      <WaitlistModal isOpen={isWaitlistOpen} onClose={() => setIsWaitlistOpen(false)} />
     </div>
   );
 }

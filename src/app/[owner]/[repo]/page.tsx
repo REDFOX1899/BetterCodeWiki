@@ -9,13 +9,14 @@ import TableOfContents from '@/components/TableOfContents';
 import RepoMetadata from '@/components/RepoMetadata';
 import WikiTreeView from '@/components/WikiTreeView';
 import ExportMenu from '@/components/ExportMenu';
+import WaitlistModal from '@/components/WaitlistModal';
 import { useLanguage } from '@/contexts/LanguageContext';
 import { RepoInfo } from '@/types/repoinfo';
 import Link from 'next/link';
 import { useParams, useSearchParams } from 'next/navigation';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
-import { ArrowLeft, Book, BookOpen, List, MessageSquare, AlertTriangle, Home, Network, Search, RefreshCw, X } from 'lucide-react';
+import { ArrowLeft, Book, BookOpen, List, Lock, MessageSquare, AlertTriangle, Home, Network, Search, RefreshCw, X } from 'lucide-react';
 import DependencyGraph from '@/components/DependencyGraph';
 import WikiSidebarSkeleton from '@/components/skeletons/WikiSidebarSkeleton';
 import WikiContentSkeleton from '@/components/skeletons/WikiContentSkeleton';
@@ -28,6 +29,7 @@ import { useWikiCache } from '@/hooks/useWikiCache';
 import { useRepoStructure } from '@/hooks/useRepoStructure';
 import { useWikiExport } from '@/hooks/useWikiExport';
 import { wikiStyles } from '@/styles/wikiStyles';
+import { SignInButton } from '@clerk/nextjs';
 
 export default function RepoWikiPage() {
   // Get route parameters and search params
@@ -153,7 +155,20 @@ export default function RepoWikiPage() {
   } | null>(null);
 
   // Authentication (extracted hook)
-  const { authRequired, authCode, setAuthCode, isAuthLoading } = useAuthentication();
+  const { authRequired, authCode, setAuthCode, isAuthLoading, isAuthenticated, getToken } = useAuthentication();
+
+  // Clerk JWT token for WebSocket auth
+  const [clerkToken, setClerkToken] = useState<string | null>(null);
+
+  // Waitlist modal state
+  const [isWaitlistModalOpen, setIsWaitlistModalOpen] = useState(false);
+
+  // Fetch Clerk token when authenticated
+  useEffect(() => {
+    if (isAuthenticated) {
+      getToken().then(setClerkToken);
+    }
+  }, [isAuthenticated, getToken]);
 
   // Default branch state
   const [defaultBranch, setDefaultBranch] = useState<string>('main');
@@ -235,6 +250,7 @@ export default function RepoWikiPage() {
     modelIncludedFiles,
     isComprehensiveView,
     selectedTemplate,
+    clerkToken,
     setIsLoading,
     setLoadingMessage,
     setError,
@@ -259,6 +275,7 @@ export default function RepoWikiPage() {
     modelExcludedFiles,
     authRequired,
     authCode,
+    isClerkAuthenticated: isAuthenticated,
     setIsLoading,
     setLoadingMessage,
     setError,
@@ -532,6 +549,37 @@ export default function RepoWikiPage() {
             </div>
           </>
 
+        ) : error === '__AUTH_REQUIRED__' ? (
+          /* Auth gate: user needs to sign in to generate new wikis */
+          <div className="max-w-md mx-auto mt-16 p-8 border border-border bg-card rounded-xl text-center">
+            <div className="inline-flex items-center justify-center p-3 bg-primary/10 rounded-full mb-4">
+              <Lock size={24} className="text-primary" />
+            </div>
+            <h3 className="text-xl font-semibold text-foreground mb-2">Sign in to Generate Wikis</h3>
+            <p className="text-muted-foreground mb-6 text-sm">
+              This repository doesn&apos;t have a cached wiki yet. Sign in to generate an AI-powered wiki for <strong>{owner}/{repo}</strong>.
+            </p>
+            <div className="flex flex-col gap-3 items-center">
+              <SignInButton mode="modal">
+                <button className="inline-flex items-center justify-center rounded-md text-sm font-medium bg-primary text-primary-foreground hover:bg-primary/90 h-10 px-6 py-2 transition-colors">
+                  Sign In to Generate
+                </button>
+              </SignInButton>
+              <button
+                onClick={() => setIsWaitlistModalOpen(true)}
+                className="text-sm text-muted-foreground hover:text-foreground transition-colors underline underline-offset-4"
+              >
+                Or join the waitlist
+              </button>
+              <Link
+                href="/"
+                className="mt-2 inline-flex items-center text-sm text-muted-foreground hover:text-foreground transition-colors"
+              >
+                <Home size={14} className="mr-1.5" />
+                Back to Home
+              </Link>
+            </div>
+          </div>
         ) : error ? (
           <div className="max-w-2xl mx-auto mt-12 p-6 border border-destructive/20 bg-destructive/5 rounded-xl text-center">
             <div className="inline-flex items-center justify-center p-3 bg-destructive/10 rounded-full mb-4">
@@ -902,16 +950,33 @@ export default function RepoWikiPage() {
           </div>
           {/* Drawer body */}
           <div className="flex-1 overflow-y-auto">
-            {effectiveRepoInfo && (
-              <Ask
-                repoInfo={effectiveRepoInfo}
-                provider={selectedProviderState}
-                model={selectedModelState}
-                isCustomModel={isCustomSelectedModelState}
-                customModel={customSelectedModelState}
-                language={language}
-                onRef={(ref) => (askComponentRef.current = ref)}
-              />
+            {isAuthenticated ? (
+              effectiveRepoInfo && (
+                <Ask
+                  repoInfo={effectiveRepoInfo}
+                  provider={selectedProviderState}
+                  model={selectedModelState}
+                  isCustomModel={isCustomSelectedModelState}
+                  customModel={customSelectedModelState}
+                  language={language}
+                  onRef={(ref) => (askComponentRef.current = ref)}
+                />
+              )
+            ) : (
+              <div className="flex flex-col items-center justify-center h-full px-8 text-center">
+                <div className="inline-flex items-center justify-center p-3 bg-primary/10 rounded-full mb-4">
+                  <Lock size={24} className="text-primary" />
+                </div>
+                <h3 className="text-lg font-semibold text-foreground mb-2">Sign in to Chat</h3>
+                <p className="text-sm text-muted-foreground mb-6">
+                  Sign in to ask questions and chat with this codebase using AI.
+                </p>
+                <SignInButton mode="modal">
+                  <button className="inline-flex items-center justify-center rounded-md text-sm font-medium bg-primary text-primary-foreground hover:bg-primary/90 h-10 px-6 py-2 transition-colors">
+                    Sign In
+                  </button>
+                </SignInButton>
+              </div>
             )}
           </div>
         </motion.div>
@@ -981,6 +1046,12 @@ export default function RepoWikiPage() {
         onSelectPage={handlePageSelect}
         isOpen={showGraph}
         onClose={() => setShowGraph(false)}
+      />
+
+      {/* Waitlist Modal */}
+      <WaitlistModal
+        isOpen={isWaitlistModalOpen}
+        onClose={() => setIsWaitlistModalOpen(false)}
       />
 
       {/* Onboarding tooltips */}

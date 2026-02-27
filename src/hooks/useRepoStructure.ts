@@ -23,6 +23,8 @@ interface UseRepoStructureParams {
   // Auth
   authRequired: boolean;
   authCode: string;
+  /** Whether the user is authenticated via Clerk (used to gate wiki generation) */
+  isClerkAuthenticated: boolean;
   // State setters
   setIsLoading: (v: boolean) => void;
   setLoadingMessage: (v: string | undefined) => void;
@@ -71,6 +73,7 @@ export function useRepoStructure(params: UseRepoStructureParams): UseRepoStructu
     modelExcludedFiles,
     authRequired,
     authCode,
+    isClerkAuthenticated,
     setIsLoading,
     setLoadingMessage,
     setError,
@@ -98,6 +101,14 @@ export function useRepoStructure(params: UseRepoStructureParams): UseRepoStructu
   const fetchRepositoryStructure = useCallback(async () => {
     if (requestInProgress) {
       console.log('Repository fetch already in progress, skipping duplicate call');
+      return;
+    }
+
+    // Gate: require Clerk authentication for wiki generation
+    if (!isClerkAuthenticated) {
+      console.log('Wiki generation requires authentication. Showing sign-in prompt.');
+      setIsLoading(false);
+      setError('__AUTH_REQUIRED__');
       return;
     }
 
@@ -370,7 +381,7 @@ export function useRepoStructure(params: UseRepoStructureParams): UseRepoStructu
       setRequestInProgress(false);
       setRequestInProgressExternal(false);
     }
-  }, [owner, repo, determineWikiStructure, currentToken, effectiveRepoInfo, requestInProgress, messages.loading, setIsLoading, setLoadingMessage, setError, setEmbeddingError, setWikiStructure, setCurrentPageId, setGeneratedPages, setPagesInProgress, setDefaultBranch, setRequestInProgressExternal]);
+  }, [owner, repo, determineWikiStructure, currentToken, effectiveRepoInfo, requestInProgress, isClerkAuthenticated, messages.loading, setIsLoading, setLoadingMessage, setError, setEmbeddingError, setWikiStructure, setCurrentPageId, setGeneratedPages, setPagesInProgress, setDefaultBranch, setRequestInProgressExternal]);
 
   const confirmRefresh = useCallback(async (newToken?: string) => {
     setShowModelOptions(false);

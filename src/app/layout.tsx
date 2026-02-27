@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Inter, Noto_Serif_JP, Plus_Jakarta_Sans, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
+import { ClerkProvider } from "@clerk/nextjs";
 import { ThemeProvider } from "next-themes";
 import { LanguageProvider } from "@/contexts/LanguageContext";
 
@@ -35,8 +36,8 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "BetterCodeWiki | AI-Powered Code Documentation",
-  description: "Automatically generate beautiful, interactive wikis for any GitHub, GitLab, or BitBucket repository",
+  title: "GitUnderstand | AI-Powered Code Documentation",
+  description: "Instantly understand any codebase with AI-generated wikis, diagrams, and interactive documentation",
 };
 
 export default function RootLayout({
@@ -55,11 +56,13 @@ export default function RootLayout({
         >
           Skip to content
         </a>
-        <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
-          <LanguageProvider>
-            {children}
-          </LanguageProvider>
-        </ThemeProvider>
+        <ClerkProvider>
+          <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
+            <LanguageProvider>
+              {children}
+            </LanguageProvider>
+          </ThemeProvider>
+        </ClerkProvider>
       </body>
     </html>
   );
