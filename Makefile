@@ -5,7 +5,8 @@
 ## ============================================================
 
 .PHONY: dev dev-api dev-web test test-api lint build-api build-web \
-        infra-plan infra-apply ingest spec help
+        infra-plan infra-apply ingest ingest-batch ingest-batch-skip \
+        ingest-dry-run spec help
 
 ## ------ Development ------------------------------------------
 
@@ -45,10 +46,21 @@ infra-plan: ## Preview Terraform changes for production
 infra-apply: ## Apply Terraform changes to production
 	cd infra/environments/prod && terraform apply
 
-## ------ Utilities --------------------------------------------
+## ------ Ingestion -----------------------------------------------
 
-ingest: ## Ingest a repo into the wiki cache (usage: make ingest REPO=owner/repo)
-	python scripts/ingest.py --repo $(REPO)
+ingest: ## Ingest a single repo (usage: make ingest REPO=facebook/react TAGS=javascript,ui)
+	python scripts/ingest.py --repo $(REPO) $(if $(TAGS),--tags $(TAGS),) $(if $(PROVIDER),--provider $(PROVIDER),)
+
+ingest-batch: ## Ingest all repos from repos.json
+	python scripts/ingest_batch.py --repos scripts/repos.json
+
+ingest-batch-skip: ## Ingest repos, skipping existing ones
+	python scripts/ingest_batch.py --repos scripts/repos.json --skip-existing
+
+ingest-dry-run: ## Preview what repos would be ingested
+	python scripts/ingest_batch.py --repos scripts/repos.json --dry-run
+
+## ------ Utilities --------------------------------------------
 
 spec: ## Create a new feature spec from template (usage: make spec NAME=my-feature)
 	cp specs/_template.md specs/$(NAME).md && echo "Created specs/$(NAME).md"

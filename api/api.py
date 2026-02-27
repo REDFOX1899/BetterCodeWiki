@@ -20,6 +20,7 @@ from slowapi.errors import RateLimitExceeded
 from api.wiki_structure_parser import parse_wiki_structure, convert_json_to_xml
 from api.storage import get_storage
 from api.auth import require_auth, optional_auth, _auth_not_configured, _verify_token
+from api.routes.admin import router as admin_router
 from api.routes.waitlist import router as waitlist_router
 from api.routes.webhooks import router as webhooks_router
 
@@ -126,6 +127,7 @@ app.add_middleware(
 app.add_middleware(GZipMiddleware, minimum_size=1000)
 
 # --- External routers ---
+app.include_router(admin_router, tags=["admin"])
 app.include_router(waitlist_router, tags=["waitlist"])
 app.include_router(webhooks_router, tags=["webhooks"])
 
