@@ -44,11 +44,13 @@ module "secrets" {
 
   project_id = var.project_id
   secrets = [
-    "GOOGLE_API_KEY",
-    "OPENAI_API_KEY",
-    "CLERK_SECRET_KEY",
-    "NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY",
-    "SERVER_BASE_URL",
+    "google-api-key",
+    "openai-api-key",
+    "clerk-secret-key",
+    "clerk-publishable-key",
+    "supabase-url",
+    "supabase-anon-key",
+    "supabase-service-role-key",
   ]
 }
 
@@ -86,8 +88,11 @@ module "api" {
   }
 
   secret_env_vars = {
-    GOOGLE_API_KEY = "GOOGLE_API_KEY"
-    OPENAI_API_KEY = "OPENAI_API_KEY"
+    GOOGLE_API_KEY           = "google-api-key"
+    OPENAI_API_KEY           = "openai-api-key"
+    CLERK_SECRET_KEY         = "clerk-secret-key"
+    SUPABASE_URL             = "supabase-url"
+    SUPABASE_SERVICE_ROLE_KEY = "supabase-service-role-key"
   }
 
   depends_on = [module.secrets]
@@ -113,7 +118,14 @@ module "web" {
   service_account       = var.runtime_sa_email
 
   env_vars = {
+    NODE_ENV    = "production"
     ENVIRONMENT = "production"
+  }
+
+  secret_env_vars = {
+    NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY = "clerk-publishable-key"
+    SUPABASE_URL                      = "supabase-url"
+    SUPABASE_ANON_KEY                 = "supabase-anon-key"
   }
 
   depends_on = [module.secrets]

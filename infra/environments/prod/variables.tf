@@ -11,7 +11,7 @@ variable "region" {
 variable "github_repo" {
   description = "GitHub repository (owner/repo format) for Workload Identity Federation"
   type        = string
-  default     = "AsyncFuncAI/deepwiki-open"
+  default     = "REDFOX1899/gitunderstand-app"
 }
 
 variable "deploy_sa_email" {
