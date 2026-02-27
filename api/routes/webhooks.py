@@ -178,18 +178,28 @@ async def clerk_webhook(request: Request) -> JSONResponse:
     try:
         if event_type == "user.created":
             user_data = _extract_user_data(event_data)
-            await create_user(user_data)
+            create_user(
+                clerk_id=user_data["clerk_id"],
+                email=user_data["email"],
+                name=f'{user_data.get("first_name", "")} {user_data.get("last_name", "")}'.strip() or None,
+                avatar_url=user_data.get("image_url") or None,
+            )
             logger.info(f"User created via webhook: {user_data.get('clerk_id')}")
 
         elif event_type == "user.updated":
             user_data = _extract_user_data(event_data)
-            await update_user(user_data["clerk_id"], user_data)
+            update_user(
+                user_data["clerk_id"],
+                email=user_data["email"],
+                name=f'{user_data.get("first_name", "")} {user_data.get("last_name", "")}'.strip() or None,
+                avatar_url=user_data.get("image_url") or None,
+            )
             logger.info(f"User updated via webhook: {user_data.get('clerk_id')}")
 
         elif event_type == "user.deleted":
             clerk_id = event_data.get("id", "")
             if clerk_id:
-                await delete_user(clerk_id)
+                delete_user(clerk_id)
                 logger.info(f"User deleted via webhook: {clerk_id}")
             else:
                 logger.warning("user.deleted event missing user ID")

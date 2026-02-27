@@ -2,7 +2,7 @@ import os
 import logging
 import time
 from collections import defaultdict
-from fastapi import FastAPI, HTTPException, Query, Request, WebSocket
+from fastapi import Depends, FastAPI, HTTPException, Query, Request, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
 from starlette.middleware.gzip import GZipMiddleware
@@ -18,6 +18,10 @@ from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 
 from api.wiki_structure_parser import parse_wiki_structure, convert_json_to_xml
+from api.storage import get_storage
+from api.auth import require_auth, optional_auth, _auth_not_configured, _verify_token
+from api.routes.waitlist import router as waitlist_router
+from api.routes.webhooks import router as webhooks_router
 
 # Configure logging
 from api.logging_config import setup_logging
@@ -120,6 +124,10 @@ app.add_middleware(
 # GZip compression for responses >= 1KB (added after CORS so it runs inside
 # the CORS middleware — Starlette processes middleware in LIFO order)
 app.add_middleware(GZipMiddleware, minimum_size=1000)
+
+# --- External routers ---
+app.include_router(waitlist_router, tags=["waitlist"])
+app.include_router(webhooks_router, tags=["webhooks"])
 
 # Helper function to get adalflow root path
 def get_adalflow_default_root_path():
@@ -553,10 +561,11 @@ _WS_CHAT_WINDOW_SECONDS = 3600  # 1 hour
 
 
 @limiter.limit(_CHAT_RATE_LIMIT)
-async def chat_completions_stream(request: Request):
+async def chat_completions_stream(request: Request, claims: dict = Depends(require_auth)):
     """
     Rate-limited wrapper for the chat completions streaming endpoint.
 
+    Requires a valid Clerk JWT (Bearer token in the Authorization header).
     Applies a limit of 30 requests per hour per IP address via slowapi.
     The underlying handler reads the JSON body from the Request object.
     """
@@ -568,12 +577,38 @@ async def chat_completions_stream(request: Request):
 
 async def rate_limited_websocket_chat(websocket: WebSocket):
     """
-    Rate-limited wrapper for the /ws/chat WebSocket endpoint.
+    Rate-limited and auth-gated wrapper for the /ws/chat WebSocket endpoint.
 
-    Checks the per-IP rate limit (30 requests/hour) before accepting the
-    connection. If the limit is exceeded, sends a 429 close code with
-    a Retry-After message and closes the WebSocket.
+    Authentication is performed via a ``token`` query parameter containing a
+    valid Clerk JWT. When Clerk auth is configured and no valid token is
+    supplied, the connection is rejected with a policy-violation close code (1008).
+
+    After auth, checks the per-IP rate limit (30 requests/hour) before
+    accepting the connection.
     """
+    # --- Auth check via query-param token ---
+    token = websocket.query_params.get("token", "")
+    if not _auth_not_configured():
+        if not token:
+            await websocket.accept()
+            await websocket.send_json({
+                "type": "error",
+                "message": "Authentication required for wiki generation",
+            })
+            await websocket.close(code=1008)
+            return
+        try:
+            claims = await _verify_token(token)
+        except Exception:
+            await websocket.accept()
+            await websocket.send_json({
+                "type": "error",
+                "message": "Invalid authentication token",
+            })
+            await websocket.close(code=1008)
+            return
+
+    # --- Rate limiting ---
     client_ip = websocket.client.host if websocket.client else "unknown"
     allowed, retry_after = ws_rate_limiter.is_allowed(
         client_ip, "/ws/chat", _WS_CHAT_MAX_REQUESTS, _WS_CHAT_WINDOW_SECONDS
@@ -598,6 +633,9 @@ async def rate_limited_diagram_explain(websocket: WebSocket):
     Checks the per-IP rate limit (5 requests/hour) before accepting the
     connection. If the limit is exceeded, sends a 429 close code with
     a Retry-After message and closes the WebSocket.
+
+    TODO: Add WebSocket auth via query-param token verification (same
+    pattern as rate_limited_websocket_chat) in a future iteration.
     """
     client_ip = websocket.client.host if websocket.client else "unknown"
     allowed, retry_after = ws_rate_limiter.is_allowed(
@@ -657,167 +695,9 @@ async def parse_wiki_structure_endpoint(request: ParseStructureRequest):
     return JSONResponse(content=structure)
 
 
-# --- Wiki Cache Helper Functions ---
-
-WIKI_CACHE_DIR = os.path.join(get_adalflow_default_root_path(), "wikicache")
-os.makedirs(WIKI_CACHE_DIR, exist_ok=True)
-
-# --- Async File I/O Helpers ---
-
-async def _read_json_async(path: str):
-    """Read and parse a JSON file without blocking the event loop."""
-    def _read():
-        with open(path, 'r', encoding='utf-8') as f:
-            return json.load(f)
-    return await asyncio.to_thread(_read)
-
-async def _write_json_async(path: str, data, indent: int = 2):
-    """Write data as JSON to a file without blocking the event loop."""
-    def _write():
-        with open(path, 'w', encoding='utf-8') as f:
-            json.dump(data, f, indent=indent, ensure_ascii=False)
-    await asyncio.to_thread(_write)
-
-async def _read_file_async(path: str) -> str:
-    """Read a text file without blocking the event loop."""
-    def _read():
-        with open(path, 'r', encoding='utf-8') as f:
-            return f.read()
-    return await asyncio.to_thread(_read)
-
-# --- Projects Index Helpers ---
-
-_PROJECTS_INDEX_PATH = os.path.join(WIKI_CACHE_DIR, "_index.json")
-
-async def _update_projects_index(owner: str, repo: str, repo_type: str, language: str, filename: str):
-    """Update the lightweight projects index after a wiki cache is saved or deleted."""
-    try:
-        index = {}
-        if os.path.exists(_PROJECTS_INDEX_PATH):
-            index = await _read_json_async(_PROJECTS_INDEX_PATH)
-
-        file_path = os.path.join(WIKI_CACHE_DIR, filename)
-        if os.path.exists(file_path):
-            stats = await asyncio.to_thread(os.stat, file_path)
-            index[filename] = {
-                "owner": owner,
-                "repo": repo,
-                "repo_type": repo_type,
-                "language": language,
-                "submittedAt": int(stats.st_mtime * 1000),
-            }
-        else:
-            # File was deleted — remove from index
-            index.pop(filename, None)
-
-        await _write_json_async(_PROJECTS_INDEX_PATH, index)
-    except Exception as e:
-        logger.warning(f"Failed to update projects index: {e}")
-
-async def _rebuild_projects_index() -> dict:
-    """Rebuild the projects index from a full directory scan (fallback)."""
-    index = {}
-    if not os.path.exists(WIKI_CACHE_DIR):
-        return index
-    filenames = await asyncio.to_thread(os.listdir, WIKI_CACHE_DIR)
-    for filename in filenames:
-        if filename.startswith("deepwiki_cache_") and filename.endswith(".json"):
-            file_path = os.path.join(WIKI_CACHE_DIR, filename)
-            try:
-                stats = await asyncio.to_thread(os.stat, file_path)
-                parts = filename.replace("deepwiki_cache_", "").replace(".json", "").split('_')
-                if len(parts) >= 4:
-                    repo_type = parts[0]
-                    owner = parts[1]
-                    language = parts[-1]
-                    repo = "_".join(parts[2:-1])
-                    index[filename] = {
-                        "owner": owner,
-                        "repo": repo,
-                        "repo_type": repo_type,
-                        "language": language,
-                        "submittedAt": int(stats.st_mtime * 1000),
-                    }
-            except Exception as e:
-                logger.error(f"Error processing file {file_path} during index rebuild: {e}")
-                continue
-    # Persist the rebuilt index
-    try:
-        await _write_json_async(_PROJECTS_INDEX_PATH, index)
-    except Exception:
-        pass
-    return index
-
-def get_wiki_cache_path(owner: str, repo: str, repo_type: str, language: str) -> str:
-    """Generates the file path for a given wiki cache."""
-    filename = f"deepwiki_cache_{repo_type}_{owner}_{repo}_{language}.json"
-    return os.path.join(WIKI_CACHE_DIR, filename)
-
-async def read_wiki_cache(owner: str, repo: str, repo_type: str, language: str) -> Optional[WikiCacheData]:
-    """Reads wiki cache data from the file system (non-blocking)."""
-    cache_path = get_wiki_cache_path(owner, repo, repo_type, language)
-    if os.path.exists(cache_path):
-        try:
-            data = await _read_json_async(cache_path)
-            return WikiCacheData(**data)
-        except Exception as e:
-            logger.error(f"Error reading wiki cache from {cache_path}: {e}")
-            return None
-    return None
-
-async def save_wiki_cache(data: WikiCacheRequest) -> bool:
-    """Saves wiki cache data to the file system."""
-    cache_path = get_wiki_cache_path(data.repo.owner, data.repo.repo, data.repo.type, data.language)
-    logger.info(f"Attempting to save wiki cache. Path: {cache_path}")
-    try:
-        # Extract structured diagram data from page content if present
-        for page in data.generated_pages.values():
-            if page.diagramData is None and page.content:
-                try:
-                    diagram_data = extract_diagram_data(page.content)
-                    if diagram_data:
-                        page.diagramData = diagram_data
-                except Exception as e:
-                    logger.warning(f"Failed to extract diagram data for page {page.id}: {e}")
-
-        payload = WikiCacheData(
-            wiki_structure=data.wiki_structure,
-            generated_pages=data.generated_pages,
-            repo=data.repo,
-            provider=data.provider,
-            model=data.model,
-            template=data.template
-        )
-        # Log size of data to be cached for debugging (avoid logging full content if large)
-        try:
-            payload_json = payload.model_dump_json()
-            payload_size = len(payload_json.encode('utf-8'))
-            logger.info(f"Payload prepared for caching. Size: {payload_size} bytes.")
-        except Exception as ser_e:
-            logger.warning(f"Could not serialize payload for size logging: {ser_e}")
-
-
-        logger.info(f"Writing cache file to: {cache_path}")
-        await _write_json_async(cache_path, payload.model_dump())
-        logger.info(f"Wiki cache successfully saved to {cache_path}")
-
-        # Update the lightweight projects index
-        filename = os.path.basename(cache_path)
-        await _update_projects_index(
-            data.repo.owner, data.repo.repo, data.repo.type, data.language, filename
-        )
-
-        return True
-    except IOError as e:
-        logger.error(f"IOError saving wiki cache to {cache_path}: {e.strerror} (errno: {e.errno})", exc_info=True)
-        return False
-    except Exception as e:
-        logger.error(f"Unexpected error saving wiki cache to {cache_path}: {e}", exc_info=True)
-        return False
-
 # --- Wiki Cache API Endpoints ---
 
-@app.get("/api/wiki_cache", response_model=Optional[WikiCacheData])
+@app.get("/api/wiki_cache")
 async def get_cached_wiki(
     request: Request,
     owner: str = Query(..., description="Repository owner"),
@@ -825,102 +705,109 @@ async def get_cached_wiki(
     repo_type: str = Query(..., description="Repository type (e.g., github, gitlab)"),
     language: str = Query(..., description="Language of the wiki content")
 ):
-    """
-    Retrieves cached wiki data (structure and generated pages) for a repository.
-    Supports ETag/If-None-Match for conditional caching.
-    """
-    # Language validation
+    """Retrieves cached wiki data for a repository. Supports ETag caching."""
     supported_langs = configs["lang_config"]["supported_languages"]
-    if not supported_langs.__contains__(language):
+    if language not in supported_langs:
         language = configs["lang_config"]["default"]
 
     logger.info(f"Attempting to retrieve wiki cache for {owner}/{repo} ({repo_type}), lang: {language}")
-    cached_data = await read_wiki_cache(owner, repo, repo_type, language)
+
+    storage = get_storage()
+    cached_data = await storage.get_wiki_cache(owner, repo, repo_type, language)
+
     if cached_data:
-        # Compute ETag from serialized content
-        data_json = json.dumps(cached_data.model_dump(), sort_keys=True, default=str)
+        data_json = json.dumps(cached_data, sort_keys=True, default=str)
         content_hash = hashlib.md5(data_json.encode()).hexdigest()
         etag = f'"{content_hash}"'
 
-        # Check If-None-Match header for conditional requests
         if_none_match = request.headers.get("if-none-match")
         if if_none_match and if_none_match == etag:
             return Response(status_code=304, headers={"ETag": etag})
 
         return JSONResponse(
-            content=cached_data.model_dump(),
+            content=cached_data,
             headers={
                 "ETag": etag,
                 "Cache-Control": "public, max-age=300",
             }
         )
     else:
-        # Return 200 with null body if not found, as frontend expects this behavior
         logger.info(f"Wiki cache not found for {owner}/{repo} ({repo_type}), lang: {language}")
         return None
 
 @app.post("/api/wiki_cache")
-async def store_wiki_cache(request_data: WikiCacheRequest):
-    """
-    Stores generated wiki data (structure and pages) to the server-side cache.
-    """
-    # Language validation
+async def store_wiki_cache_endpoint(request_data: WikiCacheRequest, claims: dict = Depends(require_auth)):
+    """Stores generated wiki data to the server-side cache."""
     supported_langs = configs["lang_config"]["supported_languages"]
-
-    if not supported_langs.__contains__(request_data.language):
+    if request_data.language not in supported_langs:
         request_data.language = configs["lang_config"]["default"]
 
     logger.info(f"Attempting to save wiki cache for {request_data.repo.owner}/{request_data.repo.repo} ({request_data.repo.type}), lang: {request_data.language}")
-    success = await save_wiki_cache(request_data)
+
+    # Extract diagram data from page content before saving
+    for page in request_data.generated_pages.values():
+        if page.diagramData is None and page.content:
+            try:
+                diagram_data = extract_diagram_data(page.content)
+                if diagram_data:
+                    page.diagramData = diagram_data
+            except Exception as e:
+                logger.warning(f"Failed to extract diagram data for page {page.id}: {e}")
+
+    payload = WikiCacheData(
+        wiki_structure=request_data.wiki_structure,
+        generated_pages=request_data.generated_pages,
+        repo=request_data.repo,
+        provider=request_data.provider,
+        model=request_data.model,
+        template=request_data.template
+    )
+
+    storage = get_storage()
+    success = await storage.save_wiki_cache(
+        request_data.repo.owner,
+        request_data.repo.repo,
+        request_data.repo.type,
+        request_data.language,
+        payload.model_dump(),
+    )
+
     if success:
         return {"message": "Wiki cache saved successfully"}
     else:
         raise HTTPException(status_code=500, detail="Failed to save wiki cache")
 
 @app.delete("/api/wiki_cache")
-async def delete_wiki_cache(
+async def delete_wiki_cache_endpoint(
     owner: str = Query(..., description="Repository owner"),
     repo: str = Query(..., description="Repository name"),
     repo_type: str = Query(..., description="Repository type (e.g., github, gitlab)"),
     language: str = Query(..., description="Language of the wiki content"),
-    authorization_code: Optional[str] = Query(None, description="Authorization code")
+    authorization_code: Optional[str] = Query(None, description="Authorization code"),
+    claims: dict = Depends(require_auth),
 ):
-    """
-    Deletes a specific wiki cache from the file system.
-    """
-    # Language validation
+    """Deletes a specific wiki cache."""
     supported_langs = configs["lang_config"]["supported_languages"]
-    if not supported_langs.__contains__(language):
+    if language not in supported_langs:
         raise HTTPException(status_code=400, detail="Language is not supported")
 
     if WIKI_AUTH_MODE:
-        logger.info("check the authorization code")
         if not authorization_code or WIKI_AUTH_CODE != authorization_code:
             raise HTTPException(status_code=401, detail="Authorization code is invalid")
 
     logger.info(f"Attempting to delete wiki cache for {owner}/{repo} ({repo_type}), lang: {language}")
-    cache_path = get_wiki_cache_path(owner, repo, repo_type, language)
 
-    if os.path.exists(cache_path):
-        try:
-            await asyncio.to_thread(os.remove, cache_path)
-            logger.info(f"Successfully deleted wiki cache: {cache_path}")
+    storage = get_storage()
+    deleted = await storage.delete_wiki_cache(owner, repo, repo_type, language)
 
-            # Update the projects index to remove this entry
-            filename = os.path.basename(cache_path)
-            await _update_projects_index(owner, repo, repo_type, language, filename)
-
-            return {"message": f"Wiki cache for {owner}/{repo} ({language}) deleted successfully"}
-        except Exception as e:
-            logger.error(f"Error deleting wiki cache {cache_path}: {e}")
-            raise HTTPException(status_code=500, detail=f"Failed to delete wiki cache: {str(e)}")
+    if deleted:
+        return {"message": f"Wiki cache for {owner}/{repo} ({language}) deleted successfully"}
     else:
-        logger.warning(f"Wiki cache not found, cannot delete: {cache_path}")
         raise HTTPException(status_code=404, detail="Wiki cache not found")
 
 @app.post("/api/wiki/regenerate_page")
 @limiter.limit("10/hour")
-async def regenerate_wiki_page(request: Request, body: RegeneratePageRequest):
+async def regenerate_wiki_page(request: Request, body: RegeneratePageRequest, claims: dict = Depends(require_auth)):
     """
     Regenerate a single wiki page without regenerating the entire wiki.
 
@@ -932,9 +819,11 @@ async def regenerate_wiki_page(request: Request, body: RegeneratePageRequest):
     logger.info(f"Regenerate page request: {body.owner}/{body.repo} page={body.page_id}")
 
     # Read existing cache
-    cached = await read_wiki_cache(body.owner, body.repo, body.repo_type, body.language)
-    if not cached:
-        raise HTTPException(status_code=404, detail="No cached wiki found for this repository. Generate the full wiki first.")
+    storage = get_storage()
+    cached_data = await storage.get_wiki_cache(body.owner, body.repo, body.repo_type, body.language)
+    if not cached_data:
+        raise HTTPException(status_code=404, detail="No cached wiki found for this repository.")
+    cached = WikiCacheData(**cached_data)
 
     # Find the page in the cache
     page_data = cached.generated_pages.get(body.page_id)
@@ -1157,13 +1046,11 @@ You MUST respond in {language_name} language."""
 
     # Update the cache file
     cached.generated_pages[body.page_id] = updated_page
-
-    cache_path = get_wiki_cache_path(body.owner, body.repo, body.repo_type, body.language)
+    cache_dict = cached.model_dump()
+    cache_dict["generated_at"] = datetime.now().isoformat()
     try:
-        cache_dict = cached.model_dump()
-        cache_dict["generated_at"] = datetime.now().isoformat()
-        await _write_json_async(cache_path, cache_dict)
-        logger.info(f"Cache updated after page regeneration: {cache_path}")
+        await storage.save_wiki_cache(body.owner, body.repo, body.repo_type, body.language, cache_dict)
+        logger.info(f"Cache updated after page regeneration")
     except Exception as e:
         logger.error(f"Failed to update cache after regeneration: {e}")
 
@@ -1209,51 +1096,29 @@ async def root():
         "endpoints": endpoints
     }
 
-# --- Processed Projects Endpoint --- (New Endpoint)
 @app.get("/api/processed_projects", response_model=List[ProcessedProjectEntry])
 async def get_processed_projects():
-    """
-    Lists all processed projects found in the wiki cache directory.
-    Uses a lightweight _index.json file for fast lookups. Falls back to
-    a full directory scan if the index is missing or stale, then rebuilds it.
-    """
+    """Lists all processed wiki projects from the cache."""
     try:
-        if not os.path.exists(WIKI_CACHE_DIR):
-            logger.info(f"Cache directory {WIKI_CACHE_DIR} not found. Returning empty list.")
-            return []
+        storage = get_storage()
+        projects = await storage.list_cached_projects()
 
-        # Try reading the pre-built index first
-        index: Optional[dict] = None
-        if os.path.exists(_PROJECTS_INDEX_PATH):
-            try:
-                index = await _read_json_async(_PROJECTS_INDEX_PATH)
-            except Exception as e:
-                logger.warning(f"Could not read projects index, will rebuild: {e}")
-
-        # Fallback: rebuild from directory scan
-        if index is None:
-            logger.info("Projects index not found or unreadable — rebuilding from directory scan.")
-            index = await _rebuild_projects_index()
-
-        project_entries: List[ProcessedProjectEntry] = []
-        for filename, meta in index.items():
-            project_entries.append(
-                ProcessedProjectEntry(
-                    id=filename,
-                    owner=meta["owner"],
-                    repo=meta["repo"],
-                    name=f"{meta['owner']}/{meta['repo']}",
-                    repo_type=meta["repo_type"],
-                    submittedAt=meta["submittedAt"],
-                    language=meta["language"],
-                )
+        project_entries = [
+            ProcessedProjectEntry(
+                id=p["id"],
+                owner=p["owner"],
+                repo=p["repo"],
+                name=p["name"],
+                repo_type=p["repo_type"],
+                submittedAt=p["submittedAt"],
+                language=p["language"],
             )
+            for p in projects
+        ]
 
-        # Sort by most recent first
-        project_entries.sort(key=lambda p: p.submittedAt, reverse=True)
         logger.info(f"Found {len(project_entries)} processed project entries.")
         return project_entries
 
     except Exception as e:
-        logger.error(f"Error listing processed projects from {WIKI_CACHE_DIR}: {e}", exc_info=True)
+        logger.error(f"Error listing processed projects: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to list processed projects from server cache.")

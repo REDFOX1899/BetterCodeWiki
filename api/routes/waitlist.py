@@ -79,7 +79,7 @@ async def join_waitlist(body: WaitlistRequest) -> JSONResponse:
     """
     try:
         # Check if this email is already on the waitlist
-        existing = await get_waitlist_by_email(body.email)
+        existing = get_waitlist_by_email(body.email)
         if existing:
             logger.info(f"Waitlist duplicate: {body.email}")
             return JSONResponse(
@@ -91,10 +91,25 @@ async def join_waitlist(body: WaitlistRequest) -> JSONResponse:
                 ).model_dump(),
             )
 
-        # Build the entry data dict, omitting None values
-        entry_data = body.model_dump(exclude_none=True)
+        # Build extra kwargs for optional fields
+        extra = {}
+        if body.price_other:
+            extra["price_other"] = body.price_other
+        if body.features_interested:
+            extra["features_interested"] = body.features_interested
+        if body.company:
+            extra["company"] = body.company
+        if body.role:
+            extra["role"] = body.role
 
-        await create_waitlist_entry(entry_data)
+        create_waitlist_entry(
+            email=str(body.email),
+            name=body.name,
+            clerk_id=body.clerk_id,
+            use_case=body.use_case,
+            willing_to_pay=body.willing_to_pay,
+            **extra,
+        )
 
         logger.info(f"Waitlist signup: {body.email}")
         return JSONResponse(
