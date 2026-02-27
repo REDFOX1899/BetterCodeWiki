@@ -1,0 +1,219 @@
+name: Deploy Preview Environment
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, closed]
+
+concurrency:
+  group: preview-pr-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+
+env:
+  REGION: us-central1
+  GAR_REPO: us-central1-docker.pkg.dev/gitunderstand/bettercodewiki
+  PR_NUMBER: ${{ github.event.pull_request.number }}
+
+jobs:
+  deploy-preview:
+    name: Deploy Preview
+    if: github.event.action != 'closed'
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      id-token: write
+      pull-requests: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: "projects/${{ secrets.GCP_PROJECT_NUMBER }}/locations/global/workloadIdentityPools/github-pool/providers/github-provider"
+          service_account: "deploy-sa@gitunderstand.iam.gserviceaccount.com"
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker us-central1-docker.pkg.dev --quiet
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push preview API image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/Dockerfile.backend
+          push: true
+          tags: ${{ env.GAR_REPO }}/api:pr-${{ env.PR_NUMBER }}
+          cache-from: type=gha,scope=api-preview
+          cache-to: type=gha,mode=max,scope=api-preview
+
+      - name: Build and push preview Web image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/Dockerfile.frontend
+          push: true
+          tags: ${{ env.GAR_REPO }}/web:pr-${{ env.PR_NUMBER }}
+          build-args: |
+            SERVER_BASE_URL=${{ secrets.SERVER_BASE_URL }}
+            NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=${{ secrets.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY }}
+          cache-from: type=gha,scope=web-preview
+          cache-to: type=gha,mode=max,scope=web-preview
+
+      - name: Deploy preview API to Cloud Run
+        id: deploy-api
+        uses: google-github-actions/deploy-cloudrun@v2
+        with:
+          service: preview-api-pr-${{ env.PR_NUMBER }}
+          region: ${{ env.REGION }}
+          image: ${{ env.GAR_REPO }}/api:pr-${{ env.PR_NUMBER }}
+          flags: |
+            --allow-unauthenticated
+            --port=8001
+            --cpu=1
+            --memory=1Gi
+            --min-instances=0
+            --max-instances=1
+            --set-env-vars=ENVIRONMENT=preview
+            --tag=pr-${{ env.PR_NUMBER }}
+            --no-traffic
+
+      - name: Deploy preview Web to Cloud Run
+        id: deploy-web
+        uses: google-github-actions/deploy-cloudrun@v2
+        with:
+          service: preview-web-pr-${{ env.PR_NUMBER }}
+          region: ${{ env.REGION }}
+          image: ${{ env.GAR_REPO }}/web:pr-${{ env.PR_NUMBER }}
+          flags: |
+            --allow-unauthenticated
+            --port=3000
+            --cpu=1
+            --memory=512Mi
+            --min-instances=0
+            --max-instances=1
+            --set-env-vars=ENVIRONMENT=preview
+            --tag=pr-${{ env.PR_NUMBER }}
+            --no-traffic
+
+      - name: Get preview URLs
+        id: urls
+        run: |
+          API_URL=$(gcloud run services describe preview-api-pr-${{ env.PR_NUMBER }} --region ${{ env.REGION }} --format 'value(status.url)')
+          WEB_URL=$(gcloud run services describe preview-web-pr-${{ env.PR_NUMBER }} --region ${{ env.REGION }} --format 'value(status.url)')
+          echo "api_url=$API_URL" >> $GITHUB_OUTPUT
+          echo "web_url=$WEB_URL" >> $GITHUB_OUTPUT
+
+      - name: Comment preview URL on PR
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const body = `### Preview Environment Deployed
+
+            | Service | URL |
+            |---------|-----|
+            | Web | ${{ steps.urls.outputs.web_url }} |
+            | API | ${{ steps.urls.outputs.api_url }} |
+
+            **Commit:** \`${{ github.sha }}\`
+
+            > This preview environment will be automatically cleaned up when the PR is closed.`;
+
+            // Find existing comment
+            const { data: comments } = await github.rest.issues.listComments({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+            });
+            const botComment = comments.find(c =>
+              c.user.type === 'Bot' && c.body.includes('Preview Environment Deployed')
+            );
+
+            if (botComment) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: botComment.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                body,
+              });
+            }
+
+  cleanup-preview:
+    name: Cleanup Preview
+    if: github.event.action == 'closed'
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: "projects/${{ secrets.GCP_PROJECT_NUMBER }}/locations/global/workloadIdentityPools/github-pool/providers/github-provider"
+          service_account: "deploy-sa@gitunderstand.iam.gserviceaccount.com"
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Delete preview services
+        run: |
+          gcloud run services delete preview-api-pr-${{ env.PR_NUMBER }} \
+            --region ${{ env.REGION }} --quiet || true
+          gcloud run services delete preview-web-pr-${{ env.PR_NUMBER }} \
+            --region ${{ env.REGION }} --quiet || true
+          echo "Preview environment for PR #${{ env.PR_NUMBER }} cleaned up." >> $GITHUB_STEP_SUMMARY
+
+  notify-failure:
+    name: Slack Notification
+    needs: [deploy-preview]
+    if: failure()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Notify Slack on failure
+        if: ${{ secrets.SLACK_WEBHOOK_URL != '' }}
+        run: |
+          curl -s -X POST "${{ secrets.SLACK_WEBHOOK_URL }}" \
+            -H 'Content-Type: application/json' \
+            -d '{
+              "blocks": [
+                {
+                  "type": "header",
+                  "text": {"type": "plain_text", "text": "Preview Deploy Failed", "emoji": true}
+                },
+                {
+                  "type": "section",
+                  "fields": [
+                    {"type": "mrkdwn", "text": "*PR:*\n#${{ github.event.pull_request.number }}"},
+                    {"type": "mrkdwn", "text": "*Title:*\n${{ github.event.pull_request.title }}"},
+                    {"type": "mrkdwn", "text": "*Author:*\n${{ github.actor }}"},
+                    {"type": "mrkdwn", "text": "*Commit:*\n`${{ github.sha }}`"}
+                  ]
+                },
+                {
+                  "type": "actions",
+                  "elements": [
+                    {
+                      "type": "button",
+                      "text": {"type": "plain_text", "text": "View Run"},
+                      "url": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+                    }
+                  ]
+                }
+              ]
+            }'

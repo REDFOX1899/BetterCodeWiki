@@ -1,0 +1,120 @@
+name: Deploy Web to Cloud Run
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "src/**"
+      - "public/**"
+      - "docker/Dockerfile.frontend"
+      - "next.config.ts"
+      - "package.json"
+      - ".github/workflows/deploy-web.yml"
+
+concurrency:
+  group: deploy-web-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  REGION: us-central1
+  GAR_REPO: us-central1-docker.pkg.dev/gitunderstand/bettercodewiki
+  SERVICE_NAME: gitunderstand-web
+
+jobs:
+  build-and-deploy:
+    name: Build & Deploy Web
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: "projects/${{ secrets.GCP_PROJECT_NUMBER }}/locations/global/workloadIdentityPools/github-pool/providers/github-provider"
+          service_account: "deploy-sa@gitunderstand.iam.gserviceaccount.com"
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker us-central1-docker.pkg.dev --quiet
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push Web image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/Dockerfile.frontend
+          push: true
+          tags: |
+            ${{ env.GAR_REPO }}/web:${{ github.sha }}
+            ${{ env.GAR_REPO }}/web:latest
+          build-args: |
+            SERVER_BASE_URL=${{ secrets.SERVER_BASE_URL }}
+            NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=${{ secrets.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY }}
+          cache-from: type=gha,scope=web
+          cache-to: type=gha,mode=max,scope=web
+
+      - name: Deploy to Cloud Run
+        uses: google-github-actions/deploy-cloudrun@v2
+        with:
+          service: ${{ env.SERVICE_NAME }}
+          region: ${{ env.REGION }}
+          image: ${{ env.GAR_REPO }}/web:${{ github.sha }}
+          flags: |
+            --allow-unauthenticated
+            --port=3000
+            --cpu=1
+            --memory=512Mi
+            --min-instances=0
+            --max-instances=5
+            --set-env-vars=ENVIRONMENT=production
+
+      - name: Show deployment URL
+        run: |
+          echo "## Web Deployment" >> $GITHUB_STEP_SUMMARY
+          echo "Image: \`${{ env.GAR_REPO }}/web:${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
+          URL=$(gcloud run services describe ${{ env.SERVICE_NAME }} --region ${{ env.REGION }} --format 'value(status.url)')
+          echo "URL: $URL" >> $GITHUB_STEP_SUMMARY
+
+      - name: Notify Slack on failure
+        if: failure() && secrets.SLACK_WEBHOOK_URL != ''
+        run: |
+          curl -s -X POST "${{ secrets.SLACK_WEBHOOK_URL }}" \
+            -H 'Content-Type: application/json' \
+            -d '{
+              "blocks": [
+                {
+                  "type": "header",
+                  "text": {"type": "plain_text", "text": "Web Deploy Failed", "emoji": true}
+                },
+                {
+                  "type": "section",
+                  "fields": [
+                    {"type": "mrkdwn", "text": "*Service:*\ngitunderstand-web"},
+                    {"type": "mrkdwn", "text": "*Commit:*\n`${{ github.sha }}`"},
+                    {"type": "mrkdwn", "text": "*Triggered by:*\n${{ github.actor }}"},
+                    {"type": "mrkdwn", "text": "*Branch:*\n`${{ github.ref_name }}`"}
+                  ]
+                },
+                {
+                  "type": "actions",
+                  "elements": [
+                    {
+                      "type": "button",
+                      "text": {"type": "plain_text", "text": "View Run"},
+                      "url": "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+                    }
+                  ]
+                }
+              ]
+            }'

@@ -1,0 +1,51 @@
+# ===========================================================
+# GitUnderstand — Local Development Compose
+# ===========================================================
+# Mirrors the production two-service architecture.
+# Usage:  docker compose -f docker/docker-compose.yml up
+# ===========================================================
+
+services:
+  frontend:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.frontend
+      args:
+        SERVER_BASE_URL: http://backend:8001
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=development
+      - SERVER_BASE_URL=http://backend:8001
+    env_file:
+      - ../.env
+    volumes:
+      - ../src:/app/src         # Hot reload for frontend source
+      - ../public:/app/public   # Static assets
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+
+  backend:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.backend
+    ports:
+      - "8001:8001"
+    environment:
+      - PORT=8001
+      - NODE_ENV=development
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    env_file:
+      - ../.env
+    volumes:
+      - ../api:/app/api                      # Hot reload for backend source
+      - ~/.adalflow:/home/apiuser/.adalflow   # Persist wiki cache & embeddings
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    restart: unless-stopped

@@ -1,0 +1,62 @@
+# ============================================================
+# GitUnderstand Backend — Multi-stage FastAPI production build
+# ============================================================
+# Build:  docker build -f docker/Dockerfile.backend -t gitunderstand-api .
+# Run:    docker run -p 8001:8001 gitunderstand-api
+# ============================================================
+
+# ------ Stage 1: Build Python dependencies ------
+FROM python:3.11-slim AS builder
+
+WORKDIR /build
+
+# Install build tooling
+RUN python -m pip install --no-cache-dir poetry==2.0.1
+
+# Copy Poetry manifests
+COPY api/pyproject.toml api/poetry.lock ./
+
+# Configure Poetry to create a virtualenv in-project
+RUN poetry config virtualenvs.create true --local && \
+    poetry config virtualenvs.in-project true --local && \
+    poetry config virtualenvs.options.always-copy true --local
+
+# Install project dependencies (main only, no dev)
+RUN POETRY_MAX_WORKERS=10 poetry install --no-interaction --no-ansi --only main && \
+    poetry cache clear --all .
+
+# Install additional production dependencies (GCS + Supabase)
+RUN .venv/bin/pip install --no-cache-dir google-cloud-storage supabase
+
+# ------ Stage 2: Production runner ------
+FROM python:3.11-slim AS runner
+
+WORKDIR /app
+
+# Install runtime system deps (git needed for repo cloning)
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends git ca-certificates curl && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+
+# Copy virtualenv from builder
+COPY --from=builder /build/.venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+
+# Copy application code
+COPY api/ ./api/
+
+# Create non-root user
+RUN groupadd --system --gid 1001 apiuser && \
+    useradd --system --uid 1001 --gid apiuser apiuser && \
+    mkdir -p /home/apiuser/.adalflow && \
+    chown -R apiuser:apiuser /home/apiuser /app
+
+USER apiuser
+
+EXPOSE 8001
+
+ENV PORT=8001
+ENV NODE_ENV=production
+
+CMD ["python", "-m", "api.main"]
