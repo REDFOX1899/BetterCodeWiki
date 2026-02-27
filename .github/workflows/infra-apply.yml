@@ -52,9 +52,12 @@ jobs:
           echo "Applied by: @${{ github.actor }}" >> $GITHUB_STEP_SUMMARY
 
       - name: Notify Slack on failure
-        if: failure() && secrets.SLACK_WEBHOOK_URL != ''
+        if: failure()
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
         run: |
-          curl -s -X POST "${{ secrets.SLACK_WEBHOOK_URL }}" \
+          [ -z "$SLACK_WEBHOOK_URL" ] && exit 0
+          curl -s -X POST "$SLACK_WEBHOOK_URL" \
             -H 'Content-Type: application/json' \
             -d '{
               "blocks": [
