@@ -84,14 +84,16 @@ module "api" {
   service_account       = var.runtime_sa_email
 
   env_vars = {
-    ENVIRONMENT = "production"
+    ENVIRONMENT          = "production"
+    WIKI_STORAGE_BACKEND = "gcs"
+    GCS_BUCKET_NAME      = "gitunderstand-wikicache"
   }
 
   secret_env_vars = {
-    GOOGLE_API_KEY           = "google-api-key"
-    OPENAI_API_KEY           = "openai-api-key"
-    CLERK_SECRET_KEY         = "clerk-secret-key"
-    SUPABASE_URL             = "supabase-url"
+    GOOGLE_API_KEY            = "google-api-key"
+    OPENAI_API_KEY            = "openai-api-key"
+    CLERK_SECRET_KEY          = "clerk-secret-key"
+    SUPABASE_URL              = "supabase-url"
     SUPABASE_SERVICE_ROLE_KEY = "supabase-service-role-key"
   }
 
@@ -122,11 +124,9 @@ module "web" {
     ENVIRONMENT = "production"
   }
 
-  secret_env_vars = {
-    NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY = "clerk-publishable-key"
-    SUPABASE_URL                      = "supabase-url"
-    SUPABASE_ANON_KEY                 = "supabase-anon-key"
-  }
+  # NEXT_PUBLIC_* vars and SERVER_BASE_URL are baked in at Docker build time.
+  # No runtime secrets needed for the frontend service.
+  secret_env_vars = {}
 
   depends_on = [module.secrets]
 }

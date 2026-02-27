@@ -5,6 +5,7 @@
 ## ============================================================
 
 .PHONY: dev dev-api dev-web test test-api lint build-api build-web \
+        push-api push-web deploy-api deploy-web deploy \
         infra-plan infra-apply ingest ingest-batch ingest-batch-skip \
         ingest-dry-run spec help
 
@@ -37,6 +38,45 @@ build-api: ## Build the backend Docker image
 
 build-web: ## Build the frontend Docker image
 	docker build -f docker/Dockerfile.frontend -t gitunderstand-web .
+
+## ------ Docker Push (to Artifact Registry) ---------------------
+
+push-api: build-api ## Build & push API image to GAR
+	docker tag gitunderstand-api us-central1-docker.pkg.dev/gitunderstand/bettercodewiki/api:latest
+	docker push us-central1-docker.pkg.dev/gitunderstand/bettercodewiki/api:latest
+
+push-web: build-web ## Build & push Web image to GAR
+	docker tag gitunderstand-web us-central1-docker.pkg.dev/gitunderstand/bettercodewiki/web:latest
+	docker push us-central1-docker.pkg.dev/gitunderstand/bettercodewiki/web:latest
+
+## ------ Deploy (manual gcloud) ---------------------------------
+
+deploy-api: ## Deploy API to Cloud Run (uses latest GAR image)
+	gcloud run deploy gitunderstand-api \
+		--image us-central1-docker.pkg.dev/gitunderstand/bettercodewiki/api:latest \
+		--region us-central1 \
+		--platform managed \
+		--allow-unauthenticated \
+		--service-account runtime-sa@gitunderstand.iam.gserviceaccount.com \
+		--port 8001 \
+		--cpu 1 --memory 2Gi \
+		--min-instances 0 --max-instances 3 \
+		--set-env-vars "ENVIRONMENT=production,WIKI_STORAGE_BACKEND=gcs,GCS_BUCKET_NAME=gitunderstand-wikicache" \
+		--set-secrets "GOOGLE_API_KEY=google-api-key:latest,OPENAI_API_KEY=openai-api-key:latest,CLERK_SECRET_KEY=clerk-secret-key:latest,SUPABASE_URL=supabase-url:latest,SUPABASE_SERVICE_ROLE_KEY=supabase-service-role-key:latest"
+
+deploy-web: ## Deploy Web to Cloud Run (uses latest GAR image)
+	gcloud run deploy gitunderstand-web \
+		--image us-central1-docker.pkg.dev/gitunderstand/bettercodewiki/web:latest \
+		--region us-central1 \
+		--platform managed \
+		--allow-unauthenticated \
+		--service-account runtime-sa@gitunderstand.iam.gserviceaccount.com \
+		--port 3000 \
+		--cpu 1 --memory 512Mi \
+		--min-instances 0 --max-instances 5 \
+		--set-env-vars "ENVIRONMENT=production,NODE_ENV=production"
+
+deploy: deploy-api deploy-web ## Deploy both services to Cloud Run
 
 ## ------ Infrastructure (Terraform) ---------------------------
 

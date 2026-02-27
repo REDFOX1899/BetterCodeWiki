@@ -61,6 +61,8 @@ jobs:
           build-args: |
             SERVER_BASE_URL=${{ secrets.SERVER_BASE_URL }}
             NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=${{ secrets.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY }}
+            NEXT_PUBLIC_SUPABASE_URL=${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+            NEXT_PUBLIC_SUPABASE_ANON_KEY=${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
           cache-from: type=gha,scope=web
           cache-to: type=gha,mode=max,scope=web
 
@@ -77,7 +79,20 @@ jobs:
             --memory=512Mi
             --min-instances=0
             --max-instances=5
-            --set-env-vars=ENVIRONMENT=production
+            --service-account=runtime-sa@gitunderstand.iam.gserviceaccount.com
+            --set-env-vars=ENVIRONMENT=production,NODE_ENV=production
+
+      - name: Verify deployment health
+        run: |
+          URL=$(gcloud run services describe ${{ env.SERVICE_NAME }} --region ${{ env.REGION }} --format 'value(status.url)')
+          for i in 1 2 3 4 5; do
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$URL/" || echo "000")
+            if [ "$STATUS" = "200" ]; then echo "Health check passed"; exit 0; fi
+            echo "Attempt $i: status=$STATUS, retrying..."
+            sleep 10
+          done
+          echo "Health check failed after 5 attempts"
+          exit 1
 
       - name: Show deployment URL
         run: |
