@@ -248,7 +248,7 @@ Rules for the structured JSON:
 - The JSON must be valid — if you are unsure, omit it rather than produce invalid JSON
 
 Rules for "simplifiedMermaidSource" (the simplified overview diagram):
-- MUST contain a valid Mermaid diagram with MAXIMUM 5-8 nodes
+- MUST contain a valid Mermaid diagram with MAXIMUM 3-5 nodes showing major subsystems
 - Show ONLY the highest-level architectural components (think "executive summary")
 - Use clear, short labels (2-4 words each, e.g., "User Interface", "API Layer", "Database")
 - Use simple relationships WITHOUT detailed edge labels (just arrows, no labels)
@@ -256,6 +256,13 @@ Rules for "simplifiedMermaidSource" (the simplified overview diagram):
 - The simplified diagram must be immediately understandable at a glance by a non-technical person
 - If the full diagram already has 8 or fewer nodes, simplifiedMermaidSource can match mermaidSource
 - Do NOT include implementation details, file names, or technical jargon in the simplified version
+
+Diagram complexity guidelines:
+- For repositories with many files (100+), focus diagrams on architectural subsystems and module boundaries rather than individual files
+- Group related components into logical clusters. A good diagram has 5-8 nodes at the top level
+- Each node should represent a subsystem or module, not an individual file
+- Show data flow and dependencies between modules, not class hierarchies within a single module
+- Prefer fewer, clearer nodes over many detailed ones — users can click nodes for details
 </structured_diagram_data>
 """
 

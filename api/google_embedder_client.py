@@ -2,7 +2,8 @@
 
 import os
 import logging
-import backoff
+import random
+import time
 from typing import Dict, Any, Optional, List, Sequence
 
 from adalflow.core.model_client import ModelClient
@@ -54,16 +55,21 @@ class GoogleEmbedderClient(ModelClient):
         self,
         api_key: Optional[str] = None,
         env_api_key_name: str = "GOOGLE_API_KEY",
+        inter_batch_delay: float = 0.2,
     ):
         """Initialize Google AI Embeddings client.
-        
+
         Args:
             api_key: Google AI API key. If not provided, uses environment variable.
             env_api_key_name: Name of environment variable containing API key.
+            inter_batch_delay: Seconds to sleep after each successful embedding
+                API call to avoid burst-hitting rate limits (default: 0.2s).
+                Set to 0 to disable.
         """
         super().__init__()
         self._api_key = api_key
         self._env_api_key_name = env_api_key_name
+        self._inter_batch_delay = inter_batch_delay
         self._initialize_client()
 
     def _initialize_client(self):
@@ -205,27 +211,57 @@ class GoogleEmbedderClient(ModelClient):
             
         return final_model_kwargs
 
-    @backoff.on_exception(
-        backoff.expo,
-        (Exception,),  # Google AI may raise various exceptions
-        max_time=5,
-    )
+    # Retry configuration for rate-limit and transient errors
+    _MAX_RETRIES = 5
+    _BASE_DELAY = 1.0       # seconds
+    _MAX_DELAY = 16.0       # seconds (cap for exponential backoff)
+    _JITTER_MAX = 1.0       # max random jitter in seconds
+
+    @staticmethod
+    def _is_retryable(exc: Exception) -> bool:
+        """Return True if the exception indicates a retryable error (429 / 503)."""
+        exc_str = str(exc).lower()
+        # google.api_core.exceptions.ResourceExhausted (429)
+        if "resourceexhausted" in type(exc).__name__.lower():
+            return True
+        # google.api_core.exceptions.ServiceUnavailable (503)
+        if "serviceunavailable" in type(exc).__name__.lower():
+            return True
+        # Catch by HTTP status code mentions in the message
+        if "429" in exc_str or "resource exhausted" in exc_str:
+            return True
+        if "503" in exc_str or "service unavailable" in exc_str:
+            return True
+        # google.generativeai may raise a generic exception wrapping these
+        if hasattr(exc, "code"):
+            code = getattr(exc, "code", None)
+            if code in (429, 503):
+                return True
+        if hasattr(exc, "status_code"):
+            status = getattr(exc, "status_code", None)
+            if status in (429, 503):
+                return True
+        return False
+
     def call(self, api_kwargs: Dict = {}, model_type: ModelType = ModelType.UNDEFINED):
-        """Call Google AI embedding API.
-        
+        """Call Google AI embedding API with retry + exponential backoff.
+
+        Retries on 429 (ResourceExhausted) and 503 (ServiceUnavailable) errors
+        with exponential backoff: 1s, 2s, 4s, 8s, 16s plus random jitter.
+
         Args:
             api_kwargs: API parameters
             model_type: Should be ModelType.EMBEDDER
-            
+
         Returns:
             Google AI embedding response
         """
         if model_type != ModelType.EMBEDDER:
             raise ValueError(f"GoogleEmbedderClient only supports EMBEDDER model type")
-            
+
         # DEBUG LOGGING (Simplified)
         log.info(f"DEBUG: GoogleEmbedderClient.call received api_kwargs keys: {list(api_kwargs.keys())}")
-        
+
         safe_log_kwargs = {k: v for k, v in api_kwargs.items() if k not in {"content", "contents"}}
         if "content" in api_kwargs:
             safe_log_kwargs["content_chars"] = len(str(api_kwargs.get("content", "")))
@@ -236,28 +272,59 @@ class GoogleEmbedderClient(ModelClient):
             except Exception:
                 safe_log_kwargs["contents_count"] = None
         log.info("Google AI Embeddings call kwargs (sanitized): %s", safe_log_kwargs)
-        
-        try:
-            # Use embed_content for single text or batch embedding
-            # CRITICAL FIX: Do not modify api_kwargs in place as it breaks backoff retries!
-            call_kwargs = api_kwargs.copy()
-            
-            if "content" in call_kwargs:
-                # Single embedding
-                response = genai.embed_content(**call_kwargs)
-            elif "contents" in call_kwargs:
-                # Batch embedding - Google AI supports batch natively
-                contents = call_kwargs.pop("contents")
-                # pass as 'content' argument which handles both single and batch in newer SDKs
-                response = genai.embed_content(content=contents, **call_kwargs)
-            else:
-                raise ValueError(f"Either 'content' or 'contents' must be provided. Got kwargs: {list(api_kwargs.keys())}")
-                
-            return response
-            
-        except Exception as e:
-            log.error(f"Error calling Google AI Embeddings API: {e}")
-            raise
+
+        last_exception: Optional[Exception] = None
+
+        for attempt in range(self._MAX_RETRIES + 1):
+            try:
+                # CRITICAL FIX: Do not modify api_kwargs in place as it breaks retries!
+                call_kwargs = api_kwargs.copy()
+
+                if "content" in call_kwargs:
+                    # Single embedding
+                    response = genai.embed_content(**call_kwargs)
+                elif "contents" in call_kwargs:
+                    # Batch embedding - Google AI supports batch natively
+                    contents = call_kwargs.pop("contents")
+                    # pass as 'content' argument which handles both single and batch
+                    response = genai.embed_content(content=contents, **call_kwargs)
+                else:
+                    raise ValueError(
+                        f"Either 'content' or 'contents' must be provided. "
+                        f"Got kwargs: {list(api_kwargs.keys())}"
+                    )
+
+                # Inter-batch cooldown to avoid burst-hitting rate limits
+                if self._inter_batch_delay > 0:
+                    time.sleep(self._inter_batch_delay)
+
+                return response
+
+            except Exception as e:
+                last_exception = e
+
+                if not self._is_retryable(e) or attempt >= self._MAX_RETRIES:
+                    log.error(
+                        "Google AI Embeddings API call failed (attempt %d/%d, non-retryable or max retries): %s",
+                        attempt + 1, self._MAX_RETRIES + 1, e,
+                    )
+                    raise
+
+                # Exponential backoff with jitter
+                delay = min(self._BASE_DELAY * (2 ** attempt), self._MAX_DELAY)
+                jitter = random.uniform(0, self._JITTER_MAX)
+                sleep_time = delay + jitter
+
+                log.warning(
+                    "Google AI Embeddings API returned retryable error (attempt %d/%d): %s. "
+                    "Retrying in %.1fs ...",
+                    attempt + 1, self._MAX_RETRIES + 1, e, sleep_time,
+                )
+                time.sleep(sleep_time)
+
+        # Should not be reached, but just in case
+        if last_exception:
+            raise last_exception
 
     async def acall(self, api_kwargs: Dict = {}, model_type: ModelType = ModelType.UNDEFINED):
         """Async call to Google AI embedding API.

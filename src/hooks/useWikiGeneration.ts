@@ -300,6 +300,8 @@ Based ONLY on the content of the \`[RELEVANT_SOURCE_FILES]\`:
 
 9.  **Conclusion/Summary:** End with a brief summary paragraph if appropriate for "${page.title}", reiterating the key aspects covered and their significance within the project.
 
+10. **Large Repo Guidance:** For large codebases, focus on how components interact rather than implementation details of individual files. Diagrams should show data flow and dependencies between modules, not class hierarchies within a single module.
+
 IMPORTANT: Generate the content in ${language === 'en' ? 'English' :
             language === 'ja' ? 'Japanese (日本語)' :
               language === 'zh' ? 'Mandarin Chinese (中文)' :
@@ -616,7 +618,9 @@ IMPORTANT:
 1. Create ${templateConfigRef.current?.page_count || (isComprehensiveView ? '8-12' : '4-6')} pages that would make a ${templateConfigRef.current?.name || (isComprehensiveView ? 'comprehensive' : 'concise')} wiki for this repository
 2. Each page should focus on a specific aspect of the codebase (e.g., architecture, key features, setup)
 3. The relevant_files should be actual files from the repository that would be used to generate that page
-4. Return ONLY valid XML with the structure specified above, with no markdown code block delimiters`
+4. Return ONLY valid XML with the structure specified above, with no markdown code block delimiters
+5. For large repositories (500+ files), create broader architectural pages rather than deep-dive pages on individual components
+6. Ensure each page covers a distinct architectural concern — avoid overlapping page topics`
         }]
       };
 

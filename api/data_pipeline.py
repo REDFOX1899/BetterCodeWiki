@@ -227,9 +227,10 @@ def download_repo(repo_url: str, local_path: str, repo_type: str = None, access_
 # Alias for backward compatibility
 download_github_repo = download_repo
 
-def read_all_documents(path: str, embedder_type: str = None, is_ollama_embedder: bool = None, 
+def read_all_documents(path: str, embedder_type: str = None, is_ollama_embedder: bool = None,
                       excluded_dirs: List[str] = None, excluded_files: List[str] = None,
-                      included_dirs: List[str] = None, included_files: List[str] = None):
+                      included_dirs: List[str] = None, included_files: List[str] = None,
+                      max_files: int = 0):
     """
     Recursively reads all documents in a directory and its subdirectories.
 
@@ -247,6 +248,8 @@ def read_all_documents(path: str, embedder_type: str = None, is_ollama_embedder:
             When provided, only files in these directories will be processed.
         included_files (List[str], optional): List of file patterns to include exclusively.
             When provided, only files matching these patterns will be processed.
+        max_files (int, optional): Maximum number of files to process (0 = unlimited).
+            When set, only the top N files by priority are included after sorting.
 
     Returns:
         list: A list of Document objects with metadata.
@@ -397,6 +400,11 @@ def read_all_documents(path: str, embedder_type: str = None, is_ollama_embedder:
     # Sort by priority so the most important files are processed first
     candidate_files.sort(key=lambda fp: _file_priority(os.path.relpath(fp, path)))
     logger.info(f"Found {len(candidate_files)} candidate files after filtering (sorted by priority)")
+
+    # Apply max_files limit if set (keep only top N by priority)
+    if max_files > 0 and len(candidate_files) > max_files:
+        logger.info(f"Applying max_files limit: {max_files} (from {len(candidate_files)} candidates)")
+        candidate_files = candidate_files[:max_files]
 
     # Process files with cumulative token budget enforcement
     cumulative_tokens = 0
@@ -823,7 +831,8 @@ class DatabaseManager:
     def prepare_database(self, repo_url_or_path: str, repo_type: str = None, access_token: str = None,
                          embedder_type: str = None, is_ollama_embedder: bool = None,
                          excluded_dirs: List[str] = None, excluded_files: List[str] = None,
-                         included_dirs: List[str] = None, included_files: List[str] = None) -> List[Document]:
+                         included_dirs: List[str] = None, included_files: List[str] = None,
+                         max_files: int = 0) -> List[Document]:
         """
         Create a new database from the repository.
 
@@ -839,6 +848,7 @@ class DatabaseManager:
             excluded_files (List[str], optional): List of file patterns to exclude from processing
             included_dirs (List[str], optional): List of directories to include exclusively
             included_files (List[str], optional): List of file patterns to include exclusively
+            max_files (int, optional): Maximum number of files to process (0 = unlimited)
 
         Returns:
             List[Document]: List of Document objects
@@ -850,7 +860,7 @@ class DatabaseManager:
         self.reset_database()
         self._create_repo(repo_url_or_path, repo_type, access_token)
         return self.prepare_db_index(embedder_type=embedder_type, excluded_dirs=excluded_dirs, excluded_files=excluded_files,
-                                   included_dirs=included_dirs, included_files=included_files)
+                                   included_dirs=included_dirs, included_files=included_files, max_files=max_files)
 
     def reset_database(self):
         """
@@ -929,9 +939,10 @@ class DatabaseManager:
             logger.error(f"Failed to create repository structure: {e}")
             raise
 
-    def prepare_db_index(self, embedder_type: str = None, is_ollama_embedder: bool = None, 
+    def prepare_db_index(self, embedder_type: str = None, is_ollama_embedder: bool = None,
                         excluded_dirs: List[str] = None, excluded_files: List[str] = None,
-                        included_dirs: List[str] = None, included_files: List[str] = None) -> List[Document]:
+                        included_dirs: List[str] = None, included_files: List[str] = None,
+                        max_files: int = 0) -> List[Document]:
         """
         Prepare the indexed database for the repository.
 
@@ -944,6 +955,7 @@ class DatabaseManager:
             excluded_files (List[str], optional): List of file patterns to exclude from processing
             included_dirs (List[str], optional): List of directories to include exclusively
             included_files (List[str], optional): List of file patterns to include exclusively
+            max_files (int, optional): Maximum number of files to process (0 = unlimited)
 
         Returns:
             List[Document]: List of Document objects
@@ -1003,7 +1015,8 @@ class DatabaseManager:
             excluded_dirs=excluded_dirs,
             excluded_files=excluded_files,
             included_dirs=included_dirs,
-            included_files=included_files
+            included_files=included_files,
+            max_files=max_files,
         )
         self.db = transform_documents_and_save_to_db(
             documents, self.repo_paths["save_db_file"], embedder_type=embedder_type

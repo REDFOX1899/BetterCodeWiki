@@ -61,6 +61,7 @@ class ChatCompletionRequest(BaseModel):
     excluded_files: Optional[str] = Field(None, description="Comma-separated list of file patterns to exclude from processing")
     included_dirs: Optional[str] = Field(None, description="Comma-separated list of directories to include exclusively")
     included_files: Optional[str] = Field(None, description="Comma-separated list of file patterns to include exclusively")
+    max_files: Optional[int] = Field(0, description="Maximum number of files to process for embedding (0 = unlimited)")
 
 async def generate_with_retry(rag, query, context_docs, provider, model, language="en", max_retries=3):
     """Generate content with retry and context reduction on failure.
@@ -178,8 +179,12 @@ async def handle_websocket_chat(websocket: WebSocket):
                 included_files = [unquote(file_pattern) for file_pattern in request.included_files.split('\n') if file_pattern.strip()]
                 logger.info(f"Using custom included files: {included_files}")
 
+            max_files = request.max_files or 0
+            if max_files > 0:
+                logger.info(f"Using max_files limit: {max_files}")
+
             # Check for a cached RAG session (only when no custom file filters)
-            has_custom_filters = any([excluded_dirs, excluded_files, included_dirs, included_files])
+            has_custom_filters = any([excluded_dirs, excluded_files, included_dirs, included_files, max_files > 0])
             from api.config import get_embedder_type
             embedder_type = get_embedder_type()
             session_key = rag_session_manager.get_session_key(request.repo_url, embedder_type) if not has_custom_filters else None
@@ -195,7 +200,7 @@ async def handle_websocket_chat(websocket: WebSocket):
             else:
                 # Create a new RAG instance
                 request_rag = RAG(provider=request.provider, model=request.model)
-                request_rag.prepare_retriever(request.repo_url, request.type, request.token, excluded_dirs, excluded_files, included_dirs, included_files)
+                request_rag.prepare_retriever(request.repo_url, request.type, request.token, excluded_dirs, excluded_files, included_dirs, included_files, max_files=max_files)
                 # Cache the session if no custom filters were used
                 if session_key:
                     rag_session_manager.put(session_key, request_rag)

@@ -138,6 +138,25 @@ Examples:
         help="Skip the Supabase upsert step",
     )
     p.add_argument(
+        "--max-files",
+        type=int,
+        default=0,
+        help="Limit the number of files sent for embedding (0 = unlimited, default: 0). "
+             "When set, only the top N files by priority are included.",
+    )
+    p.add_argument(
+        "--include-dirs",
+        default="",
+        help="Comma-separated directories to focus on (e.g., 'src,lib,api'). "
+             "When set, only files in these directories are embedded.",
+    )
+    p.add_argument(
+        "--exclude-dirs",
+        default="",
+        help="Comma-separated additional directories to exclude beyond defaults "
+             "(e.g., 'vendor,generated,fixtures').",
+    )
+    p.add_argument(
         "--concurrency",
         type=int,
         default=5,
@@ -148,6 +167,23 @@ Examples:
         type=int,
         default=300,
         help="Per-page WebSocket timeout in seconds (default: 300)",
+    )
+    p.add_argument(
+        "--delay",
+        type=float,
+        default=2.0,
+        help="Seconds to wait between starting each page generation (default: 2.0)",
+    )
+    p.add_argument(
+        "--retry-failed",
+        action="store_true",
+        help="Automatically retry pages that failed to generate",
+    )
+    p.add_argument(
+        "--max-retries",
+        type=int,
+        default=2,
+        help="Max number of retry rounds for failed pages (default: 2)",
     )
     p.add_argument("-v", "--verbose", action="store_true", help="Verbose logging")
     return p.parse_args()
@@ -388,7 +424,9 @@ IMPORTANT:
 1. Create 8-12 pages that would make a comprehensive wiki for this repository
 2. Each page should focus on a specific aspect of the codebase
 3. The relevant_files should be actual files from the repository
-4. Return ONLY valid XML with the structure specified above\
+4. Return ONLY valid XML with the structure specified above
+5. For large repositories (500+ files), create broader architectural pages rather than deep-dive pages on individual components
+6. Ensure each page covers a distinct architectural concern — avoid overlapping page topics\
 """
 
 
@@ -417,6 +455,9 @@ async def determine_wiki_structure(
     model: Optional[str],
     language: str,
     timeout: int = 300,
+    included_dirs: Optional[List[str]] = None,
+    excluded_dirs: Optional[List[str]] = None,
+    max_files: int = 0,
 ) -> Dict[str, Any]:
     """Ask the backend LLM to plan the wiki structure; return parsed dict."""
     language_name = _LANG_NAMES.get(language, "English")
@@ -438,6 +479,14 @@ async def determine_wiki_structure(
     }
     if model:
         request_body["model"] = model
+
+    # Pass file filter parameters to the backend (newline-separated strings)
+    if included_dirs:
+        request_body["included_dirs"] = "\n".join(included_dirs)
+    if excluded_dirs:
+        request_body["excluded_dirs"] = "\n".join(excluded_dirs)
+    if max_files > 0:
+        request_body["max_files"] = max_files
 
     _info(f"Sending structure request to backend via WebSocket...")
     raw_response = await ws_generate(
@@ -623,6 +672,10 @@ structured JSON block IMMEDIATELY BEFORE the Mermaid code fence:
 
 8. **Clarity and Conciseness:** Use clear, professional technical language.
 
+9. **Large Repo Guidance:** For large codebases, focus on how components interact \
+rather than implementation details of individual files. Diagrams should show data \
+flow and dependencies between modules, not class hierarchies within a single module.
+
 IMPORTANT: Generate the content in {language_name} language.\
 """
 
@@ -635,6 +688,9 @@ async def generate_page_content(
     model: Optional[str],
     language: str,
     timeout: int = 300,
+    included_dirs: Optional[List[str]] = None,
+    excluded_dirs: Optional[List[str]] = None,
+    max_files: int = 0,
 ) -> str:
     """Generate content for a single wiki page via the backend WebSocket."""
     language_name = _LANG_NAMES.get(language, "English")
@@ -658,6 +714,14 @@ async def generate_page_content(
     if model:
         request_body["model"] = model
 
+    # Pass file filter parameters to the backend (newline-separated strings)
+    if included_dirs:
+        request_body["included_dirs"] = "\n".join(included_dirs)
+    if excluded_dirs:
+        request_body["excluded_dirs"] = "\n".join(excluded_dirs)
+    if max_files > 0:
+        request_body["max_files"] = max_files
+
     raw = await ws_generate(
         api_url, request_body, timeout_seconds=timeout, label=f"page:{page['title']}"
     )
@@ -669,6 +733,15 @@ async def generate_page_content(
     return content
 
 
+_ERROR_CONTENT_PREFIX = "Error generating content: "
+
+
+def _is_failed_page(page: Dict[str, Any]) -> bool:
+    """Check whether a page has error content instead of real wiki content."""
+    content = page.get("content", "")
+    return content.startswith(_ERROR_CONTENT_PREFIX) or not content.strip()
+
+
 async def generate_all_pages(
     api_url: str,
     pages: List[Dict[str, Any]],
@@ -678,10 +751,23 @@ async def generate_all_pages(
     language: str,
     concurrency: int = 5,
     timeout: int = 300,
+    delay: float = 0.0,
+    retry_failed: bool = False,
+    max_retries: int = 2,
+    included_dirs: Optional[List[str]] = None,
+    excluded_dirs: Optional[List[str]] = None,
+    max_files: int = 0,
 ) -> Dict[str, Dict[str, Any]]:
     """Generate content for all pages with bounded concurrency.
 
     Returns a dict mapping page_id -> full page dict (with content populated).
+
+    Args:
+        delay: Seconds to wait between starting each page generation request.
+            Helps avoid API rate limits on large repos.
+        retry_failed: When True, automatically retry pages whose content starts
+            with ``_ERROR_CONTENT_PREFIX`` (up to *max_retries* rounds).
+        max_retries: Maximum number of retry rounds for failed pages.
     """
     sem = asyncio.Semaphore(concurrency)
     generated: Dict[str, Dict[str, Any]] = {}
@@ -690,14 +776,28 @@ async def generate_all_pages(
     failed = 0
     lock = asyncio.Lock()
 
+    # Track the page dispatch index so we can stagger starts by *delay*.
+    dispatch_index = 0
+    dispatch_lock = asyncio.Lock()
+
     async def _gen_one(page: Dict[str, Any]) -> None:
-        nonlocal completed, failed
+        nonlocal completed, failed, dispatch_index
         async with sem:
+            # Stagger page starts by *delay* seconds.
+            if delay > 0:
+                async with dispatch_lock:
+                    my_index = dispatch_index
+                    dispatch_index += 1
+                if my_index > 0:
+                    await asyncio.sleep(delay * my_index)
+
             page_id = page["id"]
             page_title = page["title"]
             try:
                 content = await generate_page_content(
-                    api_url, page, repo_url, provider, model, language, timeout
+                    api_url, page, repo_url, provider, model, language, timeout,
+                    included_dirs=included_dirs, excluded_dirs=excluded_dirs,
+                    max_files=max_files,
                 )
                 full_page = {**page, "content": content}
                 async with lock:
@@ -709,7 +809,7 @@ async def generate_all_pages(
                     # Store page with error content so it's not silently lost
                     generated[page_id] = {
                         **page,
-                        "content": f"Error generating content: {exc}",
+                        "content": f"{_ERROR_CONTENT_PREFIX}{exc}",
                     }
                     completed += 1
                     failed += 1
@@ -720,6 +820,79 @@ async def generate_all_pages(
 
     if failed:
         _warn(f"{failed}/{total} pages failed to generate")
+
+    # ---- Retry logic for failed pages ----
+    if retry_failed and failed > 0:
+        for retry_round in range(1, max_retries + 1):
+            failed_pages = [
+                generated[pid] for pid in generated if _is_failed_page(generated[pid])
+            ]
+            if not failed_pages:
+                break
+
+            _info(
+                f"Retry round {retry_round}/{max_retries}: "
+                f"retrying {len(failed_pages)} failed page(s) ..."
+            )
+
+            # Reset counters for the retry round
+            retry_completed = 0
+            retry_failed_count = 0
+            retry_total = len(failed_pages)
+            # Reset dispatch index for the retry round
+            dispatch_index = 0
+
+            async def _retry_one(page: Dict[str, Any]) -> None:
+                nonlocal retry_completed, retry_failed_count, dispatch_index
+                async with sem:
+                    # Stagger retries the same way
+                    if delay > 0:
+                        async with dispatch_lock:
+                            my_index = dispatch_index
+                            dispatch_index += 1
+                        if my_index > 0:
+                            await asyncio.sleep(delay * my_index)
+
+                    page_id = page["id"]
+                    page_title = page["title"]
+                    try:
+                        content = await generate_page_content(
+                            api_url, page, repo_url, provider, model, language, timeout,
+                            included_dirs=included_dirs, excluded_dirs=excluded_dirs,
+                            max_files=max_files,
+                        )
+                        full_page = {**page, "content": content}
+                        async with lock:
+                            generated[page_id] = full_page
+                            retry_completed += 1
+                        _ok(
+                            f"  [retry {retry_round}] [{retry_completed}/{retry_total}] "
+                            f"{page_title} ({len(content):,} chars)"
+                        )
+                    except Exception as exc:
+                        async with lock:
+                            generated[page_id] = {
+                                **page,
+                                "content": f"{_ERROR_CONTENT_PREFIX}{exc}",
+                            }
+                            retry_completed += 1
+                            retry_failed_count += 1
+                        _err(
+                            f"  [retry {retry_round}] [{retry_completed}/{retry_total}] "
+                            f"{page_title}: {exc}"
+                        )
+
+            retry_tasks = [asyncio.create_task(_retry_one(p)) for p in failed_pages]
+            await asyncio.gather(*retry_tasks)
+
+            if retry_failed_count == 0:
+                _ok(f"Retry round {retry_round}: all {retry_total} page(s) recovered!")
+                break
+            else:
+                _warn(
+                    f"Retry round {retry_round}: "
+                    f"{retry_failed_count}/{retry_total} page(s) still failed"
+                )
 
     return generated
 
@@ -879,9 +1052,20 @@ async def main() -> None:
     _info(f"URL: {repo_url}")
     if tags:
         _info(f"Tags: {', '.join(tags)}")
+    # Parse file filter CLI args into lists
+    include_dirs = [d.strip() for d in args.include_dirs.split(",") if d.strip()] if args.include_dirs else []
+    exclude_dirs = [d.strip() for d in args.exclude_dirs.split(",") if d.strip()] if args.exclude_dirs else []
+    max_files = args.max_files
+
     _info(f"Provider: {args.provider}  Model: {args.model or '(default)'}")
     _info(f"Language: {args.language}")
     _info(f"API URL: {args.api_url}")
+    if include_dirs:
+        _info(f"Include dirs: {', '.join(include_dirs)}")
+    if exclude_dirs:
+        _info(f"Exclude dirs: {', '.join(exclude_dirs)}")
+    if max_files > 0:
+        _info(f"Max files: {max_files}")
 
     # --- Step 2: Fetch GitHub metadata ---
     _step(2, TOTAL_STEPS, "Fetching GitHub metadata")
@@ -939,6 +1123,9 @@ async def main() -> None:
             model=args.model,
             language=args.language,
             timeout=args.timeout,
+            included_dirs=include_dirs or None,
+            excluded_dirs=exclude_dirs or None,
+            max_files=max_files,
         )
     except Exception as exc:
         _err(f"Failed to determine wiki structure: {exc}")
@@ -956,7 +1143,13 @@ async def main() -> None:
         _info(f"  {_C.ARROW} [{p.get('importance', '?'):>6}] {p['title']}")
 
     # --- Step 5: Generate page content ---
-    _step(5, TOTAL_STEPS, f"Generating content for {len(pages)} pages (concurrency={args.concurrency})")
+    delay_info = f", delay={args.delay}s" if args.delay > 0 else ""
+    retry_info = f", retry-failed (max {args.max_retries})" if args.retry_failed else ""
+    _step(
+        5, TOTAL_STEPS,
+        f"Generating content for {len(pages)} pages "
+        f"(concurrency={args.concurrency}{delay_info}{retry_info})",
+    )
 
     t0 = time.monotonic()
     generated_pages = await generate_all_pages(
@@ -968,6 +1161,12 @@ async def main() -> None:
         language=args.language,
         concurrency=args.concurrency,
         timeout=args.timeout,
+        delay=args.delay,
+        retry_failed=args.retry_failed,
+        max_retries=args.max_retries,
+        included_dirs=include_dirs or None,
+        excluded_dirs=exclude_dirs or None,
+        max_files=max_files,
     )
     elapsed_pages = time.monotonic() - t0
 

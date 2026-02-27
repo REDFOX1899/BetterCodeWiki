@@ -14,27 +14,6 @@
     "featured": true
   },
   {
-    "owner": "langchain-ai",
-    "repo": "langchain",
-    "platform": "github",
-    "tags": ["python", "ai", "llm", "framework"],
-    "featured": true
-  },
-  {
-    "owner": "vercel",
-    "repo": "next.js",
-    "platform": "github",
-    "tags": ["typescript", "react", "fullstack", "framework"],
-    "featured": true
-  },
-  {
-    "owner": "openclaw",
-    "repo": "openclaw",
-    "platform": "github",
-    "tags": ["typescript", "ai", "assistant", "open-source"],
-    "featured": true
-  },
-  {
     "owner": "REDFOX1899",
     "repo": "vigilant-sanderson",
     "platform": "github",
