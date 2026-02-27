@@ -1,7 +1,18 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { useAuth } from '@clerk/nextjs';
+
+// Clerk is only available when a valid publishable key is configured.
+const clerkPubKey = process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY ?? "";
+const isClerkEnabled = clerkPubKey.startsWith("pk_");
+
+// Conditionally resolve the useAuth hook at module scope.
+// When Clerk is not configured, we use a no-op stub that returns safe defaults.
+const useAuth: () => { isLoaded: boolean; isSignedIn: boolean; getToken: (() => Promise<string | null>) | null } =
+  isClerkEnabled
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    ? require('@clerk/nextjs').useAuth
+    : () => ({ isLoaded: true, isSignedIn: false, getToken: null });
 
 interface UseAuthenticationReturn {
   /** Whether the backend requires auth codes (legacy) */
@@ -21,7 +32,8 @@ interface UseAuthenticationReturn {
 }
 
 export function useAuthentication(): UseAuthenticationReturn {
-  // Clerk auth state
+  // useAuth is always the same function reference per build — either Clerk's
+  // hook or the no-op stub — so this satisfies the Rules of Hooks.
   const { isLoaded, isSignedIn, getToken: clerkGetToken } = useAuth();
 
   // Legacy backend auth status
@@ -53,7 +65,7 @@ export function useAuthentication(): UseAuthenticationReturn {
 
   // Wrapper around Clerk's getToken that handles edge cases
   const getToken = useCallback(async (): Promise<string | null> => {
-    if (!isLoaded || !isSignedIn) return null;
+    if (!isLoaded || !isSignedIn || !clerkGetToken) return null;
     try {
       return await clerkGetToken();
     } catch (err) {

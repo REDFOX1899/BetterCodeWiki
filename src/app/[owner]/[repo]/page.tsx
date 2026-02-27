@@ -29,7 +29,7 @@ import { useWikiCache } from '@/hooks/useWikiCache';
 import { useRepoStructure } from '@/hooks/useRepoStructure';
 import { useWikiExport } from '@/hooks/useWikiExport';
 import { wikiStyles } from '@/styles/wikiStyles';
-import { SignInButton } from '@clerk/nextjs';
+import SafeSignInButton from '@/components/SafeSignInButton';
 
 export default function RepoWikiPage() {
   // Get route parameters and search params
@@ -560,11 +560,11 @@ export default function RepoWikiPage() {
               This repository doesn&apos;t have a cached wiki yet. Sign in to generate an AI-powered wiki for <strong>{owner}/{repo}</strong>.
             </p>
             <div className="flex flex-col gap-3 items-center">
-              <SignInButton mode="modal">
+              <SafeSignInButton mode="modal">
                 <button className="inline-flex items-center justify-center rounded-md text-sm font-medium bg-primary text-primary-foreground hover:bg-primary/90 h-10 px-6 py-2 transition-colors">
                   Sign In to Generate
                 </button>
-              </SignInButton>
+              </SafeSignInButton>
               <button
                 onClick={() => setIsWaitlistModalOpen(true)}
                 className="text-sm text-muted-foreground hover:text-foreground transition-colors underline underline-offset-4"
@@ -971,11 +971,11 @@ export default function RepoWikiPage() {
                 <p className="text-sm text-muted-foreground mb-6">
                   Sign in to ask questions and chat with this codebase using AI.
                 </p>
-                <SignInButton mode="modal">
+                <SafeSignInButton mode="modal">
                   <button className="inline-flex items-center justify-center rounded-md text-sm font-medium bg-primary text-primary-foreground hover:bg-primary/90 h-10 px-6 py-2 transition-colors">
                     Sign In
                   </button>
-                </SignInButton>
+                </SafeSignInButton>
               </div>
             )}
           </div>

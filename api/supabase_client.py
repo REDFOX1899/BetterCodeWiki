@@ -60,7 +60,7 @@ def _get_client():
             "Install it with: pip install supabase"
         )
 
-    _client: Client = create_client(_SUPABASE_URL, _SUPABASE_KEY)
+    _client = create_client(_SUPABASE_URL, _SUPABASE_KEY)
     logger.info(f"Supabase client initialised for {_SUPABASE_URL}")
     return _client
 
