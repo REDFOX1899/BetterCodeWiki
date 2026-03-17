@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import { Inter, Noto_Serif_JP, Plus_Jakarta_Sans, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
-import ConditionalClerkProvider from "@/components/ConditionalClerkProvider";
 import { ThemeProvider } from "next-themes";
 import { LanguageProvider } from "@/contexts/LanguageContext";
 
@@ -56,13 +55,11 @@ export default function RootLayout({
         >
           Skip to content
         </a>
-        <ConditionalClerkProvider>
-          <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
-            <LanguageProvider>
-              {children}
-            </LanguageProvider>
-          </ThemeProvider>
-        </ConditionalClerkProvider>
+        <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
+          <LanguageProvider>
+            {children}
+          </LanguageProvider>
+        </ThemeProvider>
       </body>
     </html>
   );
