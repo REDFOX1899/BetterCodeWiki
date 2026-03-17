@@ -10,6 +10,42 @@
 3. Create visual diagrams to explain how everything works
 4. Organize it all into an easy-to-navigate wiki
 
+## Live Code Tutor (Gemini Live Agent Challenge)
+
+> **Category:** Live Agents
+> **Live Demo:** [gitunderstand-web-308289525742.us-central1.run.app](https://gitunderstand-web-308289525742.us-central1.run.app)
+
+**Live Code Tutor** is a voice-powered AI tutor that explains any GitHub repository through natural, real-time conversation. Paste a repo URL, click the mic, and start talking -- the tutor uses RAG-grounded retrieval over actual code to give accurate, hallucination-resistant answers.
+
+### Key Features
+
+- **Real-time voice conversation** via Gemini Live API bidirectional audio streaming
+- **RAG-grounded answers** backed by a FAISS vector index of the codebase, preventing hallucination
+- **Interactive diagram highlighting** -- voice-triggered Mermaid node highlighting as the tutor explains architecture
+- **Guided Tour mode** for automatic, systematic walkthroughs of a repository's structure and design
+
+### Tech
+
+| Component | Technology |
+|-----------|-----------|
+| Voice | Gemini Live API (`gemini-2.0-flash-live-001`) |
+| Agent | Google ADK with function calling (4 tools) |
+| RAG | FAISS + Gemini `text-embedding-004` |
+| Backend | FastAPI on Google Cloud Run |
+| Frontend | Next.js + Three.js + Mermaid.js |
+| IaC | Terraform (Cloud Run, Artifact Registry, Cloud Build) |
+
+### Quick Start -- Voice Tutor
+
+1. Set `GOOGLE_API_KEY` in your `.env` file
+2. Run the app: `docker-compose up` (or follow manual setup below)
+3. Navigate to any repository wiki page
+4. Click the **mic button** and start talking
+
+For the full submission write-up, see [`docs/SUBMISSION.md`](docs/SUBMISSION.md). For architecture diagrams, see [`docs/architecture.md`](docs/architecture.md).
+
+---
+
 ## Features
 
 - **Instant Documentation**: Turn any GitHub, GitLab or BitBucket repo into a wiki in seconds

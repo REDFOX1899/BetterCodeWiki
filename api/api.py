@@ -546,6 +546,7 @@ def generate_json_export(repo_url: str, pages: List[WikiPage]) -> str:
 from api.simple_chat import chat_completions_stream as _original_chat_completions_stream
 from api.websocket_wiki import handle_websocket_chat as _original_handle_websocket_chat
 from api.diagram_explain import handle_diagram_explain as _original_handle_diagram_explain
+from api.voice_tutor import handle_voice_tutor as _original_handle_voice_tutor
 
 
 # --- Rate-limited endpoint wrappers ---
@@ -563,11 +564,10 @@ _WS_CHAT_WINDOW_SECONDS = 3600  # 1 hour
 
 
 @limiter.limit(_CHAT_RATE_LIMIT)
-async def chat_completions_stream(request: Request, claims: dict = Depends(require_auth)):
+async def chat_completions_stream(request: Request, claims: dict = Depends(optional_auth)):
     """
     Rate-limited wrapper for the chat completions streaming endpoint.
 
-    Requires a valid Clerk JWT (Bearer token in the Authorization header).
     Applies a limit of 30 requests per hour per IP address via slowapi.
     The underlying handler reads the JSON body from the Request object.
     """
@@ -656,12 +656,43 @@ async def rate_limited_diagram_explain(websocket: WebSocket):
     await _original_handle_diagram_explain(websocket)
 
 
+# Voice tutor WebSocket endpoint: 10 requests per hour per IP
+_WS_VOICE_MAX_REQUESTS = 10
+_WS_VOICE_WINDOW_SECONDS = 3600  # 1 hour
+
+
+async def rate_limited_voice_tutor(websocket: WebSocket):
+    """
+    Rate-limited wrapper for the /ws/voice-tutor WebSocket endpoint.
+
+    Checks the per-IP rate limit (10 requests/hour) before accepting the
+    connection. If the limit is exceeded, sends a 429 close code with
+    a Retry-After message and closes the WebSocket.
+    """
+    client_ip = websocket.client.host if websocket.client else "unknown"
+    allowed, retry_after = ws_rate_limiter.is_allowed(
+        client_ip, "/ws/voice-tutor", _WS_VOICE_MAX_REQUESTS, _WS_VOICE_WINDOW_SECONDS
+    )
+    if not allowed:
+        logger.warning(f"WebSocket rate limit exceeded for {client_ip} on /ws/voice-tutor")
+        await websocket.accept()
+        await websocket.send_json({
+            "error": "Rate limit exceeded",
+            "detail": f"Too many requests. You are limited to {_WS_VOICE_MAX_REQUESTS} requests per hour. Please retry after {retry_after} seconds.",
+            "retry_after": retry_after
+        })
+        await websocket.close(code=1008, reason="Rate limit exceeded")
+        return
+    await _original_handle_voice_tutor(websocket)
+
+
 # Add the rate-limited chat_completions_stream endpoint to the main app
 app.add_api_route("/chat/completions/stream", chat_completions_stream, methods=["POST"])
 
 # Add the rate-limited WebSocket endpoints
 app.add_websocket_route("/ws/chat", rate_limited_websocket_chat)
 app.add_websocket_route("/ws/diagram/explain", rate_limited_diagram_explain)
+app.add_websocket_route("/ws/voice-tutor", rate_limited_voice_tutor)
 
 
 # --- Wiki Structure Parsing Endpoint ---
@@ -738,7 +769,7 @@ async def get_cached_wiki(
         return None
 
 @app.post("/api/wiki_cache")
-async def store_wiki_cache_endpoint(request_data: WikiCacheRequest, claims: dict = Depends(require_auth)):
+async def store_wiki_cache_endpoint(request_data: WikiCacheRequest, claims: dict = Depends(optional_auth)):
     """Stores generated wiki data to the server-side cache."""
     supported_langs = configs["lang_config"]["supported_languages"]
     if request_data.language not in supported_langs:
@@ -786,7 +817,7 @@ async def delete_wiki_cache_endpoint(
     repo_type: str = Query(..., description="Repository type (e.g., github, gitlab)"),
     language: str = Query(..., description="Language of the wiki content"),
     authorization_code: Optional[str] = Query(None, description="Authorization code"),
-    claims: dict = Depends(require_auth),
+    claims: dict = Depends(optional_auth),
 ):
     """Deletes a specific wiki cache."""
     supported_langs = configs["lang_config"]["supported_languages"]
@@ -809,7 +840,7 @@ async def delete_wiki_cache_endpoint(
 
 @app.post("/api/wiki/regenerate_page")
 @limiter.limit("10/hour")
-async def regenerate_wiki_page(request: Request, body: RegeneratePageRequest, claims: dict = Depends(require_auth)):
+async def regenerate_wiki_page(request: Request, body: RegeneratePageRequest, claims: dict = Depends(optional_auth)):
     """
     Regenerate a single wiki page without regenerating the entire wiki.
 
