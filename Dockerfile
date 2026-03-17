@@ -31,7 +31,8 @@ RUN python -m pip install poetry==2.0.1 --no-cache-dir && \
     poetry config virtualenvs.in-project true --local && \
     poetry config virtualenvs.options.always-copy --local true && \
     POETRY_MAX_WORKERS=10 poetry install --no-interaction --no-ansi --only main && \
-    poetry cache clear --all .
+    poetry cache clear --all . && \
+    .venv/bin/pip install google-genai>=1.0.0 --no-cache-dir
 
 # Use Python 3.11 as final image
 FROM python:3.11-slim

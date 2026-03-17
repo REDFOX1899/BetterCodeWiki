@@ -7,7 +7,6 @@ import { motion } from 'framer-motion';
 import { BookOpen } from 'lucide-react';
 import ThemeToggle from '@/components/theme-toggle';
 import AuthButtons from '@/components/AuthButtons';
-import WaitlistModal from '@/components/WaitlistModal';
 import Mermaid from '../components/Mermaid';
 import { useLanguage } from '@/contexts/LanguageContext';
 
@@ -97,8 +96,6 @@ export default function Home() {
 
   // Scroll-aware nav state
   const [isScrolled, setIsScrolled] = useState(false);
-  const [isWaitlistOpen, setIsWaitlistOpen] = useState(false);
-
   // Scroll listener for nav transparency
   useEffect(() => {
     const handleScroll = () => {
@@ -107,10 +104,6 @@ export default function Home() {
     window.addEventListener('scroll', handleScroll, { passive: true });
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
-
-  const handleWaitlistClick = () => {
-    setIsWaitlistOpen(true);
-  };
 
   return (
     <div id="main-content" className="min-h-screen bg-background text-foreground">
@@ -148,7 +141,7 @@ export default function Home() {
 
           {/* Right: Auth + Theme Toggle */}
           <div className="flex items-center gap-3">
-            <AuthButtons onWaitlistClick={handleWaitlistClick} />
+            <AuthButtons />
             <ThemeToggle />
           </div>
         </div>
@@ -193,15 +186,15 @@ export default function Home() {
               </svg>
               Explore Library
             </Link>
-            <button
-              onClick={handleWaitlistClick}
+            <Link
+              href="/github/facebook/react"
               className="inline-flex items-center justify-center gap-2 px-8 py-3 rounded-lg border border-border bg-card/80 backdrop-blur-sm text-foreground text-label-lg hover:border-primary/50 hover:bg-card/60 transition-all"
             >
               <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                <path strokeLinecap="round" strokeLinejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
               </svg>
-              Join Waitlist
-            </button>
+              Try It Now
+            </Link>
           </motion.div>
 
           {/* Social Proof Badges */}
@@ -353,7 +346,7 @@ export default function Home() {
         <CommunitySection stars={0} contributors={0} forks={0} />
 
         {/* ===== Footer CTA ===== */}
-        <FooterCTA onWaitlistClick={handleWaitlistClick} />
+        <FooterCTA />
 
         {/* ===== Footer ===== */}
         <footer className="max-w-6xl mx-auto py-8 border-t border-border w-full px-6">
@@ -371,8 +364,6 @@ export default function Home() {
         </footer>
       </ScrollAnimationProvider>
 
-      {/* Waitlist Modal */}
-      <WaitlistModal isOpen={isWaitlistOpen} onClose={() => setIsWaitlistOpen(false)} />
     </div>
   );
 }

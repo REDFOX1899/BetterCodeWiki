@@ -109,7 +109,7 @@ const VoiceTutor: React.FC<VoiceTutorProps> = ({ owner, repo, repoType }) => {
   const activeRef = useRef(false);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const animationIdRef = useRef<number | null>(null);
-  const dataArrayRef = useRef<Uint8Array | null>(null);
+  const dataArrayRef = useRef<Uint8Array<ArrayBuffer> | null>(null);
   const visualizerModeRef = useRef<'idle' | 'mic' | 'playback'>('idle');
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const currentAnalyserRef = useRef<AnalyserNode | null>(null);

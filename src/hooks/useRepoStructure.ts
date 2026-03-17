@@ -104,14 +104,6 @@ export function useRepoStructure(params: UseRepoStructureParams): UseRepoStructu
       return;
     }
 
-    // Gate: require Clerk authentication for wiki generation
-    if (!isClerkAuthenticated) {
-      console.log('Wiki generation requires authentication. Showing sign-in prompt.');
-      setIsLoading(false);
-      setError('__AUTH_REQUIRED__');
-      return;
-    }
-
     // Reset previous state
     setWikiStructure(undefined);
     setCurrentPageId(undefined);
